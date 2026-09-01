@@ -1,0 +1,31 @@
+spring:
+  # 硅基流动大模型配置（OpenAI兼容协议）
+  ai:
+    openai:
+      base-url: https://api.siliconflow.cn  # 硅基流动API地址
+      api-key: ${SILICONFLOW_API_KEY:sk-please-replace-with-your-siliconflow-key}  # 硅基流动API密钥（建议通过环境变量注入）
+      chat:
+        completions-path: /v1/chat/completions  # OpenAI兼容的对话补全路径
+        options:
+          model: deepseek-ai/DeepSeek-V3  # 模型名称（硅基流动平台上的模型）
+          temperature: 0.7  # 回复随机性（0~2）
+  datasource:
+    url: jdbc:mysql://localhost:3306/mental_health_assistant?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+
+
+server:
+  port: 8080
+
+# JWT配置
+jwt:
+  secret: "MySecretKeyForJWT2025!@#$%^&*()_+SecureKeyHere"  # 签名密钥（不少于32字节）
+  expiration: 86400000  # token过期时间：24小时（毫秒）
+  refresh-expiration: 604800000  # 刷新token过期时间：7天（毫秒）
+  header: Authorization  # token请求头名称
+  token-prefix: "Bearer "  # token前缀
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB

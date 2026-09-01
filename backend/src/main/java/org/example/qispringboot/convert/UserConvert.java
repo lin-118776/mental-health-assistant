@@ -1,0 +1,69 @@
+package org.example.qispringboot.convert;
+
+import org.example.qispringboot.DTO.response.UserLoginResponseDTO;
+import org.example.qispringboot.entity.User;
+
+/**
+ * 用户实体与响应DTO之间的转换工具类
+ */
+public class UserConvert {
+
+    /**
+     * User实体转换为详情响应DTO
+     *
+     * @param user 用户实体
+     * @return 用户详情响应DTO
+     */
+    public static UserLoginResponseDTO.UserDetailResponseDTO entityToDetailResponse(User user) {
+        return UserLoginResponseDTO.UserDetailResponseDTO.builder()
+                .id(user.getId())
+                .username(user.getUsername())
+                .email(user.getEmail())
+                .nickname(user.getNickname())
+                .avatar(user.getAvatar())
+                .phone(user.getPhone())
+                .gender(user.getGender())
+                .genderDisplayName(getGenderDisplayName(user.getGender()))
+                .birthday(user.getBirthday())
+                .userType(user.getUserType())
+                .userTypeDisplayName(user.getUserTypeDisplayName())
+                .status(user.getStatus())
+                .statusDisplayName(user.getStatusDisplayName())
+                .displayName(user.getDisplayName())
+                .createdAt(user.getCreatedAt())
+                .updatedAt(user.getUpdatedAt())
+                .build();
+    }
+
+    /**
+     * 构建登录响应DTO
+     *
+     * @param token    JWT令牌
+     * @param userInfo 用户详情信息
+     * @return 登录响应DTO
+     */
+    public static UserLoginResponseDTO buildLoginResponse(String token, UserLoginResponseDTO.UserDetailResponseDTO userInfo) {
+        return UserLoginResponseDTO.builder()
+                .userInfo(userInfo)
+                .token(token)
+                .roleType(userInfo.getUserType().toString())
+                .build();
+    }
+
+    /**
+     * 获取性别显示名称
+     *
+     * @param gender 性别代码（0:未知 1:男 2:女）
+     * @return 性别显示名称
+     */
+    private static String getGenderDisplayName(Integer gender) {
+        if (gender == null) {
+            return "未知";
+        }
+        return switch (gender) {
+            case 1 -> "男";
+            case 2 -> "女";
+            default -> "未知";
+        };
+    }
+}
