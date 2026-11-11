@@ -12,6 +12,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.example.qispringboot.common.Result;
 import org.example.qispringboot.common.ResultCode;
 import org.example.qispringboot.security.LoginUser;
+import org.example.qispringboot.mapper.UserMapper;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -32,6 +33,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     @Resource
     private JwtUtil jwtUtil;
+
+    @Resource
+    private UserMapper userMapper;
 
     @Resource
     private JwtProperties jwtProperties;
@@ -56,6 +60,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             Claims claims = jwtUtil.parseToken(token);
             // 5. 从token中解析用户信息
             Long userId = jwtUtil.getUserId(token);
+            var user = userMapper.selectById(userId);
+            if (user == null || !jwtUtil.isPasswordCurrent(claims, user.getPassword())) {
+                SecurityContextHolder.clearContext();
+                writeErrorResponse(response, ResultCode.TOKEN_INVALID);
+                return;
+            }
             String username = jwtUtil.getUsername(token);
             Integer userType = jwtUtil.getUserType(token);
             // 6. 根据用户类型构建角色（2:管理员，其余为普通用户）

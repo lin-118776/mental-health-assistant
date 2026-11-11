@@ -10,6 +10,7 @@
                 <router-link to="/consultation" class="nav-link" v-if="isLoggendIn">AI咨询</router-link>
                 <router-link to="/emotion-diary" class="nav-link" v-if="isLoggendIn">情绪日记</router-link>
                 <router-link to="/knowledge" class="nav-link">知识库</router-link>
+                <router-link to="/profile" class="nav-link" v-if="isLoggendIn">个人中心</router-link>
                 <el-button class="logout-btn" v-if="isLoggendIn" @click="handleLogout">退出登录</el-button>
                 <template v-else>
                     <router-link to="/auth/login" class="nav-link">登录</router-link>

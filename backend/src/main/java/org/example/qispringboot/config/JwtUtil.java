@@ -8,6 +8,9 @@ import jakarta.annotation.Resource;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
+import javax.crypto.Mac;
+import java.security.MessageDigest;
+import java.util.Base64;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
@@ -42,7 +45,7 @@ public class JwtUtil {
      * @param userType 用户类型（1:普通用户 2:管理员）
      * @return 生成的JWT令牌字符串
      */
-    public String generateToken(Long userId, String username, Integer userType) {
+    public String generateToken(Long userId, String username, Integer userType, String encodedPassword) {
         // 当前时间
         Date now = new Date();
         // 过期时间 = 当前时间 + 配置的过期时长
@@ -51,10 +54,29 @@ public class JwtUtil {
                 .subject(username)                    // 主题：用户名
                 .claim(CLAIM_USER_ID, userId)         // 自定义声明：用户ID
                 .claim(CLAIM_USER_TYPE, userType)     // 自定义声明：用户类型
+                .claim("passwordVersion", passwordVersion(encodedPassword))
                 .issuedAt(now)                        // 签发时间
                 .expiration(expirationTime)           // 过期时间
                 .signWith(getSigningKey())            // 使用HS256算法签名
                 .compact();
+    }
+
+    // 凭证中仅存储带服务端密钥的指纹，不存储密码或BCrypt哈希。
+    private String passwordVersion(String encodedPassword) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(getSigningKey());
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(
+                    mac.doFinal(encodedPassword.getBytes(StandardCharsets.UTF_8)));
+        } catch (Exception e) {
+            throw new IllegalStateException("无法生成登录凭证版本", e);
+        }
+    }
+
+    public boolean isPasswordCurrent(Claims claims, String encodedPassword) {
+        String version = claims.get("passwordVersion", String.class);
+        return version != null && encodedPassword != null && MessageDigest.isEqual(
+                version.getBytes(StandardCharsets.UTF_8), passwordVersion(encodedPassword).getBytes(StandardCharsets.UTF_8));
     }
 
     /**

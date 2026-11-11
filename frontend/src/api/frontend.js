@@ -3,6 +3,10 @@ import request from '@/utils/request'
 export const register = (data) => {
     return request.post('/user/add',data)
 }
+
+export const getMyProfile = () => request.get('/user/me')
+export const updateMyProfile = (data) => request.put('/user/me', data)
+export const updateMyPassword = (data) => request.put('/user/password', data)
 export const startSession = (data) => {
     return request.post('/psychological-chat/session/start',data)
 }

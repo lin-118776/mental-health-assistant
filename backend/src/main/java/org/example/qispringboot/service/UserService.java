@@ -101,7 +101,7 @@ public class UserService {
             throw new BusinessException(ResultCode.ACCOUNT_DISABLED);
         }
         // 5. 认证通过，生成JWT令牌
-        String token = jwtUtil.generateToken(user.getId(), user.getUsername(), user.getUserType());
+        String token = jwtUtil.generateToken(user.getId(), user.getUsername(), user.getUserType(), user.getPassword());
         // 6. 组装登录返回实体（token + 角色 + 用户详情）
         UserLoginResponseDTO.UserDetailResponseDTO userInfo = UserConvert.entityToDetailResponse(user);
         UserLoginResponseDTO loginResponse = UserConvert.buildLoginResponse(token, userInfo);

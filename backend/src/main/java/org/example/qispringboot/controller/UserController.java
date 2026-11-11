@@ -7,6 +7,10 @@ import org.example.qispringboot.DTO.UserRegisterCommandDTO;
 import org.example.qispringboot.DTO.response.UserLoginResponseDTO;
 import org.example.qispringboot.common.Result;
 import org.example.qispringboot.service.UserService;
+import org.example.qispringboot.service.UserProfileService;
+import org.example.qispringboot.DTO.command.UserProfileUpdateDTO;
+import org.example.qispringboot.DTO.command.UserPasswordUpdateDTO;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -23,6 +27,20 @@ public class UserController {
 
     @Resource
     private UserService userService;
+
+    @Resource
+    private UserProfileService userProfileService;
+
+    @PutMapping("/me")
+    public Result<UserLoginResponseDTO.UserDetailResponseDTO> updateProfile(@Valid @RequestBody UserProfileUpdateDTO dto) {
+        return Result.OK(userProfileService.updateProfile(dto));
+    }
+
+    @PutMapping("/password")
+    public Result<Void> updatePassword(@Valid @RequestBody UserPasswordUpdateDTO dto) {
+        userProfileService.updatePassword(dto);
+        return Result.OK();
+    }
 
     /**
      * 用户注册接口

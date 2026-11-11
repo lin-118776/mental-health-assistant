@@ -95,6 +95,11 @@ const frontendRouter=[
                
             },
             {
+                path:'profile',
+                component:()=>import('@/views/profile.vue'),
+                meta:{ requiresAuth:true }
+            },
+            {
                 path:'knowledge/article/:id',
                 component:()=>import('@/views/articleDetail.vue'),
                 props:true,
@@ -133,7 +138,7 @@ router.beforeEach((to, from, next) => {
         }
     } else {
         // 未登录
-        if (isBackPath) {
+        if (isBackPath || to.meta.requiresAuth) {
             // 访问后台页面，重定向到登录
             next('/auth/login')
         } else {
