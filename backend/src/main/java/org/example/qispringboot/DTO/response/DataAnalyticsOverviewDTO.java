@@ -27,6 +27,7 @@ public class DataAnalyticsOverviewDTO {
     @AllArgsConstructor
     public static class SystemOverviewDTO {
         private Long totalUsers;
+        // 近7天新建日志或发送用户消息的现存账号去重数。
         private Long activeUsers;
         private Long totalDiaries;
         private Long todayDiaries;
@@ -41,6 +42,7 @@ public class DataAnalyticsOverviewDTO {
     @AllArgsConstructor
     public static class ConsultationStatsDTO {
         private Long totalSessions;
+        // 有用户发言的会话首末消息时间差的均值；不是在线使用时长。
         private Double avgDurationMinutes;
         private List<TrendItemDTO> dailyTrend;
     }
@@ -61,6 +63,7 @@ public class DataAnalyticsOverviewDTO {
     @AllArgsConstructor
     public static class UserActivityItemDTO {
         private String date;
+        private Long activeUsers;
         private Long newUsers;
         private Long diaryUsers;
         private Long consultationUsers;
@@ -73,6 +76,6 @@ public class DataAnalyticsOverviewDTO {
     public static class EmotionTrendItemDTO {
         private String date;
         private Double avgMoodScore;
-        private Long sessionCount;
+        private Long sessionCount; // 保留原接口字段名，此处表示日志条数。
     }
 }

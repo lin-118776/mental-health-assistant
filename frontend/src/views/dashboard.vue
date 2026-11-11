@@ -1,5 +1,8 @@
 <template>
-    <div class="dashboard-container">
+    <div class="dashboard-container" v-loading="loading">
+        <el-alert v-if="loadError" title="统计加载失败，请重试" type="error" :closable="false" />
+        <el-button v-if="loadError" @click="loadOverview">重试</el-button>
+        <p class="statistics-note">按北京时间统计。近7天活跃用户指新建日志或发送消息的去重用户；今日新增按创建时间计算。</p>
         <el-row :gutter="20">
             <el-col :span="6">
                <el-card>
@@ -9,8 +12,8 @@
                         </div>
                         <div class="info">
                             <p class="title">总用户数</p>
-                            <p class="number">{{aiData?.systemOverview?.totalUsers || 0}}</p>
-                            <p class="subtitle-title">活跃用户：{{aiData?.systemOverview?.activeUsers || 0}}</p>
+                            <p class="number">{{aiData?.systemOverview?.totalUsers ?? '--'}}</p>
+                            <p class="subtitle-title">近7天活跃：{{aiData?.systemOverview?.activeUsers ?? '--'}}</p>
                         </div>
                     </div>
                </el-card>
@@ -24,8 +27,8 @@
                         </div>
                         <div class="info">
                             <p class="title">情绪日志</p>
-                            <p class="number">{{aiData?.systemOverview?.totalDiaries || 0}}</p>
-                            <p class="subtitle-title">今日新增：{{aiData?.systemOverview?.todayDiaries || 0}}</p>
+                            <p class="number">{{aiData?.systemOverview?.totalDiaries ?? '--'}}</p>
+                            <p class="subtitle-title">今日新增：{{aiData?.systemOverview?.todayDiaries ?? '--'}}</p>
                         </div>
                     </div>
                </el-card>
@@ -39,8 +42,8 @@
                         </div>
                         <div class="info">
                             <p class="title">咨询会话</p>
-                            <p class="number">{{aiData?.systemOverview?.totalSesss || 0}}</p>
-                            <p class="subtitle-title">今日新增：{{aiData?.systemOverview?.todaySesss || 0}}</p>
+                            <p class="number">{{aiData?.systemOverview?.totalSesss ?? '--'}}</p>
+                            <p class="subtitle-title">今日新增：{{aiData?.systemOverview?.todaySesss ?? '--'}}</p>
                         </div>
                     </div>
                </el-card>
@@ -54,8 +57,8 @@
                         </div>
                         <div class="info">
                             <p class="title">平均情绪</p>
-                            <p class="number">{{aiData?.systemOverview?.avgMoodScore || 0}}/10</p>
-                            <p class="subtitle-title">情绪健康指数：</p>
+                            <p class="number">{{aiData?.systemOverview?.avgMoodScore ?? '--'}}/10</p>
+                            <p class="subtitle-title">全部日志评分均值</p>
                         </div>
                     </div>
                </el-card>
@@ -85,18 +88,19 @@
                 <div class="consultation-stats">
                   <div class="stat-item">
                     <div class="stat-label">总会话数</div>
-                    <div class="stat-value">{{aiData?.consultationStats?.totalSessions || aiData?.consultationStats?.totalSesss || 0}}</div>
+                    <div class="stat-value">{{aiData?.consultationStats?.totalSessions ?? '--'}}</div>
                   </div>
                   <div class="stat-item">
-                    <div class="stat-label">平均时长</div>
-                    <div class="stat-value">{{aiData?.consultationStats?.avgDurationMinutes || 0}}分钟</div>
+                    <div class="stat-label" title="有用户发言的会话从首条到末条消息的平均时间差，不代表在线使用时长">平均消息跨度</div>
+                    <div class="stat-value">{{aiData?.consultationStats?.avgDurationMinutes ?? '--'}}分钟</div>
                   </div>
                   <div class="stat-item">
-                    <div class="stat-label">活跃用户</div>
-                    <div class="stat-value">{{aiData?.systemOverview?.activeUsers || 0}}</div>
+                    <div class="stat-label">近7天活跃用户</div>
+                    <div class="stat-value">{{aiData?.systemOverview?.activeUsers ?? '--'}}</div>
                   </div>
                 </div>
               </div>
+                <p class="statistics-note">总会话数含尚未发言的会话；下图按每天有用户发言的会话统计。消息跨度不代表在线使用时长。</p>
                 <div ref="consultationChartRef" style="width: 100%; height: 293px;"></div>
             </el-card>
           </el-col>
@@ -131,6 +135,8 @@ const iconUrl4=new URL('@/assets/images/smile.png',import.meta.url).href
 
 
 const aiData=ref({})
+const loading = ref(false)
+const loadError = ref(false)
 
 
 
@@ -206,6 +212,8 @@ const initConsultationChart =()=>{
       },
       yAxis: {
         type: 'value',
+        min: 0,
+        minInterval: 1,
         axisLabel: {
           color: '#636e72'
         },
@@ -475,6 +483,8 @@ const initEmotionChart =()=>{
       },
       yAxis: [{
         type: 'value',
+        min: 1,
+        max: 10,
         name: '情绪评分',
         position: 'left',
         axisLine:{
@@ -484,6 +494,8 @@ const initEmotionChart =()=>{
         }
       },{
         type: 'value',
+        min: 0,
+        minInterval: 1,
         name: '记录数量',
         position: 'right',
         axisLine:{
@@ -496,6 +508,7 @@ const initEmotionChart =()=>{
         name: '平均情绪评分',
         type: 'line',
         data: trendData.map(item=>item.avgMoodScore),
+        connectNulls: false,
         smooth: true,
         lineStyle:{
           color: '#facbaf',
@@ -509,6 +522,7 @@ const initEmotionChart =()=>{
       name: '记录数量',
       type: 'line',
       data: trendData.map(item=>item.sessionCount),
+      yAxisIndex: 1,
       smooth: true,
       lineStyle:{
         color: '#eeb5a3',
@@ -528,16 +542,27 @@ const initEmotionChart =()=>{
 
 
 
-onMounted(() => {
-    getAnalyticsOverview().then(res => {
-        console.log(res)
-        aiData.value=res.data
+const loadOverview = async () => {
+    if (loading.value) return
+    loading.value = true
+    loadError.value = false
+    try {
+        const res = await getAnalyticsOverview()
+        aiData.value = res.data
         initCharts()
-    })
-})
+    } catch {
+        aiData.value = {}
+        loadError.value = true
+        ;[emotionChart, consultationChart, userActiveChart].forEach(chart => chart?.clear())
+    } finally {
+        loading.value = false
+    }
+}
+onMounted(loadOverview)
 </script>
 
 <style lang="scss" scoped>
+.statistics-note { color: #6b7280; font-size: 13px; margin-bottom: 16px; }
 .dashboard-container {
     .card-content {
       display: flex;
