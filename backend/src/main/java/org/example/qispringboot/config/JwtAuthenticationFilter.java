@@ -66,6 +66,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 writeErrorResponse(response, ResultCode.TOKEN_INVALID);
                 return;
             }
+            if (user.isDisabled()) {
+                SecurityContextHolder.clearContext();
+                writeErrorResponse(response, ResultCode.ACCOUNT_DISABLED);
+                return;
+            }
             String username = jwtUtil.getUsername(token);
             Integer userType = jwtUtil.getUserType(token);
             // 6. 根据用户类型构建角色（2:管理员，其余为普通用户）

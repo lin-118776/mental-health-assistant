@@ -1,5 +1,8 @@
 import request from '@/utils/request'
 
+export const getAdminUsers = (params) => request.get('/user/admin/page', { params })
+export const updateUserStatus = (id, status) => request.put(`/user/admin/${id}/status`, { status })
+
 export function login(data){
     return request.post('/user/login',data)
 }

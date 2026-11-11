@@ -11,6 +11,11 @@ const BackendRouter=[
         component:BackendLayout,
         children:[
             {
+                path:'users',
+                component:()=>import('@/views/users.vue'),
+                meta:{ title:'用户管理', icon:'UserFilled' }
+            },
+            {
                 path:'dashboard',
                 component:()=>import('@/views/dashboard.vue'),
                 meta:{

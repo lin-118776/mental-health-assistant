@@ -75,6 +75,16 @@ class PasswordTokenTests {
     }
 
     @Test
+    void disablingAccountBlocksExistingTokenAndEnablingRestoresAccess() throws Exception {
+        String token = jwt.generateToken(7L, "owner", 1, user.getPassword());
+        user.setStatus(0);
+        assertEquals(401, authenticate(token, false));
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+        user.setStatus(1);
+        assertEquals(200, authenticate(token, true));
+    }
+
+    @Test
     void legacyTokensCannotBypassPasswordRevocation() throws Exception {
         String legacy = Jwts.builder().subject("owner").claim("userId", 7L).claim("userType", 1)
                 .expiration(new Date(System.currentTimeMillis() + 60000))
@@ -99,6 +109,8 @@ class PasswordTokenTests {
         command.setPassword("old-pass");
         var response = loginService.login(command).getData();
         assertTrue(jwt.isPasswordCurrent(jwt.parseToken(response.getToken()), account.getPassword()));
+        account.setStatus(0);
+        assertThrows(org.example.qispringboot.exception.BusinessException.class, () -> loginService.login(command));
     }
 
     private int authenticate(String token, boolean shouldPass) throws Exception {
