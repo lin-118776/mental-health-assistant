@@ -20,6 +20,8 @@ import org.example.qispringboot.mapper.ChatSessionMapper;
 import org.example.qispringboot.mapper.UserMapper;
 import org.example.qispringboot.security.LoginUser;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
@@ -31,6 +33,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.SignalType;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -50,6 +54,9 @@ public class ChatService {
 
     // 消息类型：文本
     private static final int MESSAGE_TYPE_TEXT = 1;
+
+    private static final int MAX_HISTORY_MESSAGES = 20;
+    private static final int MAX_HISTORY_CHARACTERS = 16000;
 
     @Resource
     private ChatSessionMapper chatSessionMapper;
@@ -270,10 +277,11 @@ public class ChatService {
         Long userId = loginUser.getUserId();
         // 2. 解析会话：未传sessionId时自动新建会话
         ChatSession session = resolveSession(userId, commandDTO.getSessionId(), commandDTO.getContent());
+        Prompt prompt = buildConversationPrompt(session.getId(), commandDTO.getContent());
         // 3. 保存用户问题消息（发送者=用户）
         ChatMessage userMessage = saveMessage(session.getId(), SENDER_USER, commandDTO.getContent());
         // 4. 生成AI回复并保存消息（发送者=AI助手）
-        String reply = generateAiReply(commandDTO.getContent());
+        String reply = chatClient.prompt(prompt).call().content();
         ChatMessage aiMessage = saveMessage(session.getId(), SENDER_AI, reply);
         // 5. 组装响应返回
         return ChatReplyResponseDTO.builder()
@@ -298,12 +306,10 @@ public class ChatService {
         Long userId = loginUser.getUserId();
         // 2. 解析会话：未传sessionId时自动新建会话
         ChatSession session = resolveSession(userId, commandDTO.getSessionId(), commandDTO.getContent());
+        // 在本次问题入库前读取历史，避免重复加入本次问题。
+        Prompt prompt = buildConversationPrompt(session.getId(), commandDTO.getContent());
         // 3. 实时保存用户提问到聊天消息表
         saveMessage(session.getId(), SENDER_USER, commandDTO.getContent());
-        // 4. 构建Prompt：系统提示词 + 用户消息
-        Prompt prompt = new Prompt(List.of(
-                new SystemMessage(PromptManage.PSYCHOLOGICAL_SUPPORT_SYSTEM_PROMPT),
-                new UserMessage(commandDTO.getContent())));
         // 5. 调用大模型流式接口，逐段处理
         StringBuilder aiContent = new StringBuilder();
         return chatClient.prompt(prompt).stream().content()
@@ -343,13 +349,43 @@ public class ChatService {
     }
 
     /**
-     * 生成AI回复内容（简单模式占位实现）
-     * 当前为占位逻辑，流式对话请使用streamChat接口
-     *
-     * @param question 用户问题
-     * @return AI回复内容
+     * 为已校验归属的会话构建上下文。历史保存在数据库中，刷新页面后仍可继续对话。
+     * 只取最近的文本消息，并按消息数和字符数限制历史长度；保留完整消息。
      */
-    private String generateAiReply(String question) {
-        return "我已收到你的倾诉：" + question + "。请放心，我会认真倾听，陪你一起梳理情绪。";
+    private Prompt buildConversationPrompt(Long sessionId, String question) {
+        List<ChatMessage> recentMessages = chatMessageMapper.selectList(
+                new LambdaQueryWrapper<ChatMessage>()
+                        .eq(ChatMessage::getSessionId, sessionId)
+                        .eq(ChatMessage::getMessageType, MESSAGE_TYPE_TEXT)
+                        .in(ChatMessage::getSenderType, SENDER_USER, SENDER_AI)
+                        .orderByDesc(ChatMessage::getId)
+                        .last("LIMIT " + MAX_HISTORY_MESSAGES));
+        List<Message> history = new ArrayList<>();
+        int characters = 0;
+        for (ChatMessage message : recentMessages) {
+            String content = message.getContent();
+            if (!StringUtils.hasText(content)) {
+                continue;
+            }
+            if (characters + content.length() > MAX_HISTORY_CHARACTERS) {
+                break;
+            }
+            if (Integer.valueOf(SENDER_USER).equals(message.getSenderType())) {
+                history.add(new UserMessage(content));
+            } else if (Integer.valueOf(SENDER_AI).equals(message.getSenderType())) {
+                history.add(new AssistantMessage(content));
+            }
+            characters += content.length();
+        }
+        Collections.reverse(history);
+        // 窗口可能从某轮回答开始，移除缺少对应提问的开头回答。
+        while (!history.isEmpty() && history.get(0) instanceof AssistantMessage) {
+            history.remove(0);
+        }
+        List<Message> messages = new ArrayList<>();
+        messages.add(new SystemMessage(PromptManage.PSYCHOLOGICAL_SUPPORT_SYSTEM_PROMPT));
+        messages.addAll(history);
+        messages.add(new UserMessage(question));
+        return new Prompt(messages);
     }
 }
