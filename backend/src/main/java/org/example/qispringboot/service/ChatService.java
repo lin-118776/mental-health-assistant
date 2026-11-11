@@ -67,6 +67,9 @@ public class ChatService {
     @Resource
     private UserMapper userMapper;
 
+    @Resource
+    private EmotionAnalysisService emotionAnalysisService;
+
     // Spring AI聊天客户端（默认使用硅基流动配置）
     private final ChatClient chatClient;
 
@@ -228,22 +231,15 @@ public class ChatService {
 
     /**
      * 获取会话情绪分析
-     * 暂返回默认中性结果，后续可接入大模型情绪分析
+     * 根据会话内用户的实际发言分析情绪，先校验会话归属。
      *
      * @param sessionId 会话ID
      * @return 情绪分析结果
      */
     public Map<String, Object> getSessionEmotion(Long sessionId) {
         Long userId = getCurrentLoginUser().getUserId();
-        getOwnedSession(userId, sessionId);
-        return Map.of(
-                "primaryEmotion", "中性",
-                "emotionScore", 50,
-                "isNegative", false,
-                "riskLevel", 0,
-                "suggestion", "情绪状态平稳",
-                "improvementSuggestions", List.of()
-        );
+        ChatSession session = getOwnedSession(userId, sessionId);
+        return emotionAnalysisService.analyze(session);
     }
 
     /**

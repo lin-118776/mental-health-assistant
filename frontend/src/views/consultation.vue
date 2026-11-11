@@ -18,13 +18,13 @@
                     <div class="garden-title"> 情绪花园 </div>
                 </div>
                 <div class="emotion-info">
-                    <div class="emotion-name">中性</div>
-                    <div class="emotion-score">50</div>
+                    <div class="emotion-name">{{ currentEmotion.primaryEmotion }}</div>
+                    <div class="emotion-score" title="情绪积极程度：0–100，越高越积极">{{ currentEmotion.emotionScore ?? '--' }}</div>
                 </div>
                 <div class="warm-tips">
                     <div class="emotion-status-text">
                         <span class="status-label">今天感觉</span>
-                        <span class="status-emotion">{{ currentEmotion.isNegative ? '需要关注' : '很不错' }}</span>
+                        <span class="status-emotion">{{ !currentEmotion.available ? '待了解' : currentEmotion.isNegative ? '需要关注' : '较平稳' }}</span>
                     </div>
                     <div class="emotion-intensity">
                         <span class="intensity-dots">
@@ -34,6 +34,7 @@
                             {{ getRiskText(currentEmotion.riskLevel) }}
                         </span>
                     </div>
+                    <div>AI 分析仅供自我了解参考</div>
                     <!-- 温暖建议卡片 -->
                     <div class="warm-suggestion" v-if="currentEmotion.suggestion">
                         <div class="suggestion-icon">💝</div>
@@ -223,6 +224,8 @@ const creatNewfrontendSession = () =>{
     }
     //将新会话对象赋值给currentSession
     currentSession.value = newSession
+    emotionRequestId++
+    currentEmotion.value = emptyEmotion()
 }
 
 
@@ -240,14 +243,18 @@ const userMessage = ref('')
 const isAiTyping = ref(false)
 
 //情绪花园
-const currentEmotion = ref({
-    primaryEmotion:'中性',
-    emotionScore:50,
+const emptyEmotion = (name = '待分析', suggestion = '开始对话后，将根据你的发言分析情绪。') => ({
+    available: false,
+    primaryEmotion:name,
+    emotionScore:null,
     isNegative: false,
-    riskLevel:0,
-    suggestion:'情绪状态平稳',
+    riskLevel:null,
+    suggestion,
+    riskDescription:'',
     improvementSuggestions:[]
 })
+const currentEmotion = ref(emptyEmotion())
+let emotionRequestId = 0
 
 const getIntensityClass =(score)=>{
     if(score>= 61){
@@ -262,7 +269,7 @@ const getIntensityClass =(score)=>{
 const getRiskText =(level)=>{
     switch(level){
             case 0:
-            return '正常'
+            return '未见明显风险'
             case 1:
             return '关注'
             case 2:
@@ -270,15 +277,20 @@ const getRiskText =(level)=>{
             case 3:
             return '危机'
             default:
-            return '正常'
+            return '暂无分析'
     }
 }
 
 const loadSessionEmotion = (sessionId) =>{
-    //直接传入后端数字会话ID
+    const requestId = ++emotionRequestId
+    currentEmotion.value = emptyEmotion('分析中', '正在分析本次会话，请稍候。')
     getSessionEmotion(sessionId).then(res => {
+        if (requestId !== emotionRequestId || currentSession.value?.sessionId !== sessionId) return
         currentEmotion.value = res.data
-    }).catch(()=>{})
+    }).catch(()=>{
+        if (requestId !== emotionRequestId || currentSession.value?.sessionId !== sessionId) return
+        currentEmotion.value = emptyEmotion('暂不可用', '情绪分析暂不可用，请稍后重新打开会话重试。')
+    })
 }
 
 //定义键盘事件
@@ -380,6 +392,12 @@ const startNewSession = (message) =>{
 
         //调用流式接口
         const ctrl = new AbortController() //终止fetch
+        let emotionRequested = false
+        const analyzeEmotionOnce = () => {
+            if (emotionRequested || currentSession.value?.sessionId !== sessionId) return
+            emotionRequested = true
+            loadSessionEmotion(sessionId)
+        }
         fetchEventSource('/api/psychological-chat/stream',{
             method:'POST',
             headers:{
@@ -407,7 +425,7 @@ const startNewSession = (message) =>{
                     isAiTyping.value = false
                     ctrl.abort()
                     //加载会话情绪
-                    loadSessionEmotion(currentSession.value.sessionId)
+                    analyzeEmotionOnce()
                     return
                 }
                 if(!raw) return
@@ -425,7 +443,7 @@ const startNewSession = (message) =>{
                 //流式结束，恢复输入状态
                 isAiTyping.value = false
                 //开始情绪分析
-                loadSessionEmotion(currentSession.value.sessionId)
+                analyzeEmotionOnce()
 
 
 

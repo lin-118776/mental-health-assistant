@@ -116,6 +116,15 @@ class ChatServiceMemoryTests {
     }
 
     @Test
+    void emotionAnalysisChecksOwnershipBeforeCallingAnalysisService() {
+        EmotionAnalysisService analysis = mock(EmotionAnalysisService.class);
+        ReflectionTestUtils.setField(service, "emotionAnalysisService", analysis);
+        when(sessions.selectById(10L)).thenReturn(ChatSession.builder().id(10L).userId(2L).build());
+        assertThrows(BusinessException.class, () -> service.getSessionEmotion(10L));
+        verifyNoInteractions(analysis);
+    }
+
+    @Test
     void historyIsLoadedAgainWhenContinuingExistingSession() {
         stream(10L, "第一次");
         when(messages.selectList(any(Wrapper.class))).thenReturn(List.of(
