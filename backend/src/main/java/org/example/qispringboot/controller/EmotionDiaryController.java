@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -32,6 +33,30 @@ public class EmotionDiaryController {
     @PostMapping
     public Result<Void> add(@Valid @RequestBody EmotionDiaryCreateDTO dto) {
         emotionDiaryService.addDiary(getCurrentLoginUser().getUserId(), dto);
+        return Result.OK();
+    }
+
+    @GetMapping("/mine")
+    public Result<Page<EmotionDiaryResponseDTO>> mine(
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "10") long size) {
+        return Result.OK(emotionDiaryService.myPage(getCurrentLoginUser().getUserId(), page, size));
+    }
+
+    @GetMapping("/mine/{id}")
+    public Result<EmotionDiaryResponseDTO> myDetail(@PathVariable Long id) {
+        return Result.OK(emotionDiaryService.myDetail(getCurrentLoginUser().getUserId(), id));
+    }
+
+    @PutMapping("/mine/{id}")
+    public Result<Void> updateMine(@PathVariable Long id, @Valid @RequestBody EmotionDiaryCreateDTO dto) {
+        emotionDiaryService.updateMine(getCurrentLoginUser().getUserId(), id, dto);
+        return Result.OK();
+    }
+
+    @DeleteMapping("/mine/{id}")
+    public Result<Void> deleteMine(@PathVariable Long id) {
+        emotionDiaryService.deleteMine(getCurrentLoginUser().getUserId(), id);
         return Result.OK();
     }
 

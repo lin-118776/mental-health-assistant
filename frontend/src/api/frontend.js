@@ -28,6 +28,11 @@ export const addEmotionDiary = (data) =>{
     return request.post(`/emotion-diary`,data)
 }
 
+export const getMyEmotionDiaries = (params) => request.get('/emotion-diary/mine', { params })
+export const getMyEmotionDiary = (id) => request.get(`/emotion-diary/mine/${id}`)
+export const updateMyEmotionDiary = (id, data) => request.put(`/emotion-diary/mine/${id}`, data)
+export const deleteMyEmotionDiary = (id) => request.delete(`/emotion-diary/mine/${id}`)
+
 // export const getKnowledgeList = (params) =>{
 //     return request.get(' /knowledge/article/page',{ params })
 // }

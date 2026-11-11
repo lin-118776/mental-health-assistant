@@ -1,12 +1,14 @@
 package org.example.qispringboot.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.Resource;
 import org.example.qispringboot.DTO.command.EmotionDiaryCreateDTO;
 import org.example.qispringboot.DTO.response.EmotionDiaryResponseDTO;
 import org.example.qispringboot.entity.EmotionDiary;
 import org.example.qispringboot.entity.User;
+import org.example.qispringboot.exception.BusinessException;
 import org.example.qispringboot.mapper.EmotionDiaryMapper;
 import org.example.qispringboot.mapper.UserMapper;
 import org.springframework.stereotype.Service;
@@ -75,6 +77,46 @@ public class EmotionDiaryService {
 
     public void deleteDiary(Long id) {
         diaryMapper.deleteById(id);
+    }
+
+    public Page<EmotionDiaryResponseDTO> myPage(Long userId, long current, long size) {
+        Page<EmotionDiary> page = new Page<>(Math.max(1, current), Math.max(1, Math.min(100, size)));
+        diaryMapper.selectPage(page, new LambdaQueryWrapper<EmotionDiary>()
+                .eq(EmotionDiary::getUserId, userId)
+                .orderByDesc(EmotionDiary::getDiaryDate).orderByDesc(EmotionDiary::getId));
+        Page<EmotionDiaryResponseDTO> result = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
+        result.setRecords(page.getRecords().stream().map(d -> toResponse(d, null)).toList());
+        return result;
+    }
+
+    public EmotionDiaryResponseDTO myDetail(Long userId, Long id) {
+        EmotionDiary diary = diaryMapper.selectOne(new LambdaQueryWrapper<EmotionDiary>()
+                .eq(EmotionDiary::getId, id).eq(EmotionDiary::getUserId, userId));
+        if (diary == null) throw new BusinessException("日志不存在或无权访问");
+        return toResponse(diary, null);
+    }
+
+    public void updateMine(Long userId, Long id, EmotionDiaryCreateDTO dto) {
+        // 显式set允许清空可选字段，且更新条件始终包含当前登录用户。
+        int changed = diaryMapper.update(null, new LambdaUpdateWrapper<EmotionDiary>()
+                .eq(EmotionDiary::getId, id).eq(EmotionDiary::getUserId, userId)
+                .set(EmotionDiary::getDiaryDate, dto.getDiaryDate())
+                .set(EmotionDiary::getMoodScore, dto.getMoodScore())
+                .set(EmotionDiary::getDominantEmotion, dto.getDominantEmotion())
+                .set(EmotionDiary::getEmotionTriggers, dto.getEmotionTriggers())
+                .set(EmotionDiary::getDiaryContent, dto.getDiaryContent())
+                .set(EmotionDiary::getSleepQuality, dto.getSleepQuality())
+                .set(EmotionDiary::getStressLevel, dto.getStressLevel())
+                .set(EmotionDiary::getAiEmotionAnalysis, null)
+                .set(EmotionDiary::getAiAnalysisUpdatedAt, null)
+                .set(EmotionDiary::getUpdatedAt, LocalDateTime.now()));
+        if (changed == 0) throw new BusinessException("日志不存在或无权访问");
+    }
+
+    public void deleteMine(Long userId, Long id) {
+        int changed = diaryMapper.delete(new LambdaQueryWrapper<EmotionDiary>()
+                .eq(EmotionDiary::getId, id).eq(EmotionDiary::getUserId, userId));
+        if (changed == 0) throw new BusinessException("日志不存在或无权访问");
     }
 
     private EmotionDiaryResponseDTO toResponse(EmotionDiary d, String nickname) {
