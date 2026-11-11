@@ -44,11 +44,11 @@ export function deleteArticle(id){
 }
 
 export function getConsultations(params){
-    return request.get('/psychological-chat/sessions',{params})
+    return request.get('/psychological-chat/admin/sessions',{params})
 }
 
 export function getConsultationDetail(sessionId){
-    return request.get(`/psychological-chat/sessions/${sessionId}/messages`)
+    return request.get(`/psychological-chat/admin/sessions/${sessionId}`)
 }
 
 export function getAnalyticsOverview(){
