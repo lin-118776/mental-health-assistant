@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.Resource;
 import org.example.qispringboot.DTO.command.EmotionDiaryCreateDTO;
 import org.example.qispringboot.DTO.response.EmotionDiaryResponseDTO;
+import org.example.qispringboot.DTO.response.EmotionTrendResponseDTO;
 import org.example.qispringboot.entity.EmotionDiary;
 import org.example.qispringboot.entity.User;
 import org.example.qispringboot.exception.BusinessException;
@@ -15,8 +16,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -87,6 +93,38 @@ public class EmotionDiaryService {
         Page<EmotionDiaryResponseDTO> result = new Page<>(page.getCurrent(), page.getSize(), page.getTotal());
         result.setRecords(page.getRecords().stream().map(d -> toResponse(d, null)).toList());
         return result;
+    }
+
+    public EmotionTrendResponseDTO myTrend(Long userId, int days) {
+        return myTrend(userId, days, LocalDate.now(ZoneId.of("Asia/Shanghai")));
+    }
+
+    EmotionTrendResponseDTO myTrend(Long userId, int days, LocalDate today) {
+        if (days != 7 && days != 30) throw new BusinessException("仅支持近7天或近30天");
+        LocalDate start = today.minusDays(days - 1L);
+        List<EmotionDiary> diaries = diaryMapper.selectList(new LambdaQueryWrapper<EmotionDiary>()
+                .select(EmotionDiary::getDiaryDate, EmotionDiary::getMoodScore,
+                        EmotionDiary::getSleepQuality, EmotionDiary::getStressLevel)
+                .eq(EmotionDiary::getUserId, userId)
+                .ge(EmotionDiary::getDiaryDate, start).le(EmotionDiary::getDiaryDate, today));
+        Map<LocalDate, List<EmotionDiary>> byDay = diaries.stream()
+                .filter(d -> d.getDiaryDate() != null && !d.getDiaryDate().isBefore(start)
+                        && !d.getDiaryDate().isAfter(today))
+                .collect(Collectors.groupingBy(EmotionDiary::getDiaryDate));
+        List<EmotionTrendResponseDTO.Day> trend = new ArrayList<>();
+        for (LocalDate date = start; !date.isAfter(today); date = date.plusDays(1)) {
+            List<EmotionDiary> records = byDay.getOrDefault(date, List.of());
+            trend.add(new EmotionTrendResponseDTO.Day(date, records.size(),
+                    average(records, EmotionDiary::getMoodScore),
+                    average(records, EmotionDiary::getSleepQuality),
+                    average(records, EmotionDiary::getStressLevel)));
+        }
+        return new EmotionTrendResponseDTO(days, start, today, trend);
+    }
+
+    private Double average(List<EmotionDiary> diaries, Function<EmotionDiary, Integer> field) {
+        var average = diaries.stream().map(field).filter(Objects::nonNull).mapToInt(Integer::intValue).average();
+        return average.isPresent() ? Math.round(average.getAsDouble() * 10.0) / 10.0 : null;
     }
 
     public EmotionDiaryResponseDTO myDetail(Long userId, Long id) {

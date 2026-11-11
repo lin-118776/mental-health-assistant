@@ -5,6 +5,7 @@ import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 import org.example.qispringboot.DTO.command.EmotionDiaryCreateDTO;
 import org.example.qispringboot.DTO.response.EmotionDiaryResponseDTO;
+import org.example.qispringboot.DTO.response.EmotionTrendResponseDTO;
 import org.example.qispringboot.common.Result;
 import org.example.qispringboot.common.ResultCode;
 import org.example.qispringboot.exception.BusinessException;
@@ -46,6 +47,11 @@ public class EmotionDiaryController {
     @GetMapping("/mine/{id}")
     public Result<EmotionDiaryResponseDTO> myDetail(@PathVariable Long id) {
         return Result.OK(emotionDiaryService.myDetail(getCurrentLoginUser().getUserId(), id));
+    }
+
+    @GetMapping("/mine/trend")
+    public Result<EmotionTrendResponseDTO> myTrend(@RequestParam(defaultValue = "7") int days) {
+        return Result.OK(emotionDiaryService.myTrend(getCurrentLoginUser().getUserId(), days));
     }
 
     @PutMapping("/mine/{id}")

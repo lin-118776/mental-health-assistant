@@ -76,4 +76,22 @@ class EmotionDiaryOwnerControllerTests {
                 .andExpect(jsonPath("$.code").value(ResultCode.UNAUTHORIZED.getCode()));
         verifyNoInteractions(service);
     }
+
+    @Test
+    void trendRouteUsesLoginIdentityAndSupportsBothPeriods() throws Exception {
+        mvc.perform(get("/api/emotion-diary/mine/trend").param("userId", "999"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.code").value("200"));
+        verify(service).myTrend(7L, 7);
+        mvc.perform(get("/api/emotion-diary/mine/trend").param("days", "30").param("userId", "999"))
+                .andExpect(status().isOk());
+        verify(service).myTrend(7L, 30);
+    }
+
+    @Test
+    void trendRouteRejectsMissingLogin() throws Exception {
+        SecurityContextHolder.clearContext();
+        mvc.perform(get("/api/emotion-diary/mine/trend"))
+                .andExpect(jsonPath("$.code").value(ResultCode.UNAUTHORIZED.getCode()));
+        verifyNoInteractions(service);
+    }
 }

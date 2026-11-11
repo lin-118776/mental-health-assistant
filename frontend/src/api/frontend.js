@@ -29,6 +29,7 @@ export const addEmotionDiary = (data) =>{
 }
 
 export const getMyEmotionDiaries = (params) => request.get('/emotion-diary/mine', { params })
+export const getMyEmotionTrend = (days) => request.get('/emotion-diary/mine/trend', { params: { days } })
 export const getMyEmotionDiary = (id) => request.get(`/emotion-diary/mine/${id}`)
 export const updateMyEmotionDiary = (id, data) => request.put(`/emotion-diary/mine/${id}`, data)
 export const deleteMyEmotionDiary = (id) => request.delete(`/emotion-diary/mine/${id}`)

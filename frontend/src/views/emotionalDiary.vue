@@ -7,6 +7,7 @@
             </div>
         </div>
         <div class="content">
+            <PersonalEmotionTrend ref="trendRef" />
             <div class="diary-card">
                 <div class="history-header">
                     <div class="title">我的日志</div>
@@ -123,6 +124,9 @@
     import { dayjs, ElMessage, ElMessageBox } from 'element-plus'
     import { ref , reactive, onMounted } from 'vue'
     import { addEmotionDiary, getMyEmotionDiaries, getMyEmotionDiary, updateMyEmotionDiary, deleteMyEmotionDiary } from '@/api/frontend'
+    import PersonalEmotionTrend from '@/components/PersonalEmotionTrend.vue'
+
+    const trendRef = ref(null)
 
     const diaries = ref([])
     const page = ref(1)
@@ -207,6 +211,7 @@
             if (detail.value?.id === record.id) detailVisible.value = false
             ElMessage.success('删除成功')
             await loadDiaries()
+            trendRef.value?.refresh()
         } catch {
             // 取消删除或接口失败时保留原记录。
         } finally {
@@ -283,6 +288,7 @@
             resetForm()
             page.value = 1
             await loadDiaries()
+            trendRef.value?.refresh()
         } catch {
             // 失败时保留填写内容，便于重试。
         } finally {
