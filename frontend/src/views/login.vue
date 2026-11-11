@@ -1,7 +1,7 @@
 <template>
     <div class="container">
         <div class="title">
-            <div class="back-home">
+            <div class="back-home" @click="router.push('/')">
                 <el-icon><Back /></el-icon>
                 <span>返回首页</span>
 
@@ -26,7 +26,7 @@
              <el-form-item label="密码" prop="password">
                 <el-input v-model="formData.password" size="large" placeholder="请输入密码" type="password" show-password />
             </el-form-item>
-            <el-button class="btn" type="primary" size="large" @click="submitForm(ruleFormRef)">登录</el-button>
+            <el-button class="btn" type="primary" size="large" :loading="submitting" @click="submitForm(ruleFormRef)">登录</el-button>
             </el-form>
             <div class="footer">
                 <p>还没有登陆？<router-link to="/auth/register">去注册</router-link></p>
@@ -41,12 +41,16 @@
 <script setup>
 import { ref } from 'vue'
 import { login } from '@/api/admin'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { setSessionUser } from '@/utils/session.js'
+import { safeReturnPath } from '@/utils/authNavigation.js'
 
 
 const ruleFormRef = ref()
 const router = useRouter()
+const route = useRoute()
+const submitting = ref(false)
 
 const formData = ref({
     username: '',
@@ -63,33 +67,21 @@ const rules = ref({
 
 //登录
 const submitForm = async (formEl) => {
-    if (!formEl) return
-    await formEl.validate((valid) => {
-        if (valid) {
-            login(formData.value).then(res => {
-                // 兼容处理：尝试从根部或 data 字段中获取 token
-                const token = res.token || (res.data && res.data.token)
-                
-                if (!token) {
-                    return ElMessage.error('登录失败：未获取到 Token')
-                }
-                
-                // 登录成功处理
-                localStorage.setItem('token', token)
-                // 保存用户信息，优先取 res.data，否则取 res 本身
-                localStorage.setItem('userInfo', JSON.stringify((res.data && res.data.userInfo) || res.data || res))
-                //根据用户角色选择跳转路径
-                if(res.data && res.data.userInfo && res.data.userInfo.userType === 2){
-                    router.push('/back/dashboard')
-                }else{
-                    router.push('/')
-                }               
-                
-            }).catch(err => {
-                console.error('登录逻辑执行异常:', err)
-            })
-        }
-    })
+    if (!formEl || submitting.value) return
+    submitting.value = true
+    try {
+        if (!await formEl.validate()) return
+        const res = await login(formData.value)
+        const data = res.data || res
+        if (!data.token || !data.userInfo) return ElMessage.error('登录失败：未获取到有效用户信息')
+        localStorage.setItem('token', data.token)
+        setSessionUser(data.userInfo)
+        await router.replace(safeReturnPath(route.query.redirect, data.userInfo, value => router.resolve(value)))
+    } catch {
+        // 表单和请求工具负责显示校验错误；保留输入供重试。
+    } finally {
+        submitting.value = false
+    }
 }
 
 // const submitForm = async (formEl)=>{

@@ -93,6 +93,35 @@ class PasswordTokenTests {
     }
 
     @Test
+    void authorizationUsesCurrentDatabaseRoleInsteadOfOldTokenClaims() throws Exception {
+        String token = jwt.generateToken(7L, "old-name", 2, user.getPassword());
+        user.setUserType(1);
+        user.setUsername("current-name");
+        assertEquals(200, authenticate(token, true));
+        var authentication = SecurityContextHolder.getContext().getAuthentication();
+        assertTrue(authentication.getAuthorities().stream().anyMatch(role -> role.getAuthority().equals("ROLE_USER")));
+        assertFalse(authentication.getAuthorities().stream().anyMatch(role -> role.getAuthority().equals("ROLE_ADMIN")));
+        user.setUserType(2);
+        assertEquals(200, authenticate(token, true));
+        assertTrue(SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                .anyMatch(role -> role.getAuthority().equals("ROLE_ADMIN")));
+    }
+
+    @Test
+    void staleTokenDoesNotPreventLoginOrRegistration() throws Exception {
+        for (String path : java.util.List.of("/api/user/login", "/api/user/add", "/api/user/register")) {
+            var request = new MockHttpServletRequest("POST", path);
+            request.setServletPath(path);
+            request.addHeader("Authorization", "Bearer stale-invalid-token");
+            var response = new MockHttpServletResponse();
+            var passed = new AtomicBoolean(false);
+            filter.doFilter(request, response, (req, res) -> passed.set(true));
+            assertTrue(passed.get());
+            assertEquals(200, response.getStatus());
+        }
+    }
+
+    @Test
     void realLoginIssuesPasswordVersionToken() {
         var users = mock(UserMapper.class);
         var encoder = new BCryptPasswordEncoder(4);

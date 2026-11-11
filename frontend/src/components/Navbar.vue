@@ -9,12 +9,13 @@
         <div class="flex-box">
             <el-dropdown @command="handleCommand">
                 <div class="flex-box el-dropdown-link">
-                    <el-avatar src="https://cube.elemecdn.com/0/88/03b0d39583f48206768a7534e55bcpng.png" size="small" />
-                    <p class="user-name">admin</p>
+                    <el-avatar :src="sessionUser?.avatar" size="small">{{ (sessionUser?.displayName || sessionUser?.username || '用户').charAt(0) }}</el-avatar>
+                    <p class="user-name">{{ sessionUser?.displayName || sessionUser?.username || '用户' }}</p>
                     <el-icon><ArrowDown /></el-icon>
                 </div>
                 <template #dropdown>
                     <el-dropdown-menu>
+                        <el-dropdown-item command="frontend">返回前台</el-dropdown-item>
                         <el-dropdown-item command="layout">退出登录</el-dropdown-item>
                     </el-dropdown-menu> 
                 </template>
@@ -28,26 +29,24 @@ import { useAdminStore } from '@/stores/admin'
 import { useRouter,useRoute } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { logout } from '@/api/admin'
+import { sessionUser, clearSession } from '@/utils/session.js'
 
 const router = useRouter()
 const route = useRoute()
 const adminStore = useAdminStore()
 
 const handleCommand = (command) => {
+    if (command === 'frontend') return router.push('/')
     if (command === 'layout') {
         ElMessageBox.confirm('确定要退出登录吗？', '提示', {
             confirmButtonText: '确定',
             cancelButtonText: '取消',
             type: 'warning'
-        }).then(() => {
-            logout().then(() => {
-                //清除缓存
-                localStorage.removeItem('token')
-                localStorage.removeItem('userInfo')
-                //跳转登录页
-                router.push('/auth/login')
-            })
-        })
+        }).then(async () => {
+            try { await logout() } catch { /* 清除本地状态后允许重新登录。 */ }
+            clearSession()
+            await router.replace('/auth/login')
+        }).catch(() => {})
     }
 }
 

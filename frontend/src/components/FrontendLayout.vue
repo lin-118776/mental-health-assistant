@@ -11,6 +11,7 @@
                 <router-link to="/emotion-diary" class="nav-link" v-if="isLoggendIn">情绪日记</router-link>
                 <router-link to="/knowledge" class="nav-link">知识库</router-link>
                 <router-link to="/profile" class="nav-link" v-if="isLoggendIn">个人中心</router-link>
+                <router-link to="/back/dashboard" class="nav-link" v-if="isAdministrator">管理后台</router-link>
                 <el-button class="logout-btn" v-if="isLoggendIn" @click="handleLogout">退出登录</el-button>
                 <template v-else>
                     <router-link to="/auth/login" class="nav-link">登录</router-link>
@@ -36,33 +37,25 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed } from 'vue'
 import { logout } from '@/api/admin'
 import { useRouter } from 'vue-router'
+import { sessionUser, clearSession } from '@/utils/session.js'
 const router = useRouter()
 
 
 
 const logoUrl = new URL('@/assets/images/机器人.png', import.meta.url).href
 
-const isLoggendIn = ref(false)
+const isLoggendIn = computed(() => Boolean(sessionUser.value))
+const isAdministrator = computed(() => Number(sessionUser.value?.userType) === 2)
 
 // 退出登录
-const handleLogout = () => {
-logout().then(()=>{
-    localStorage.removeItem('token')
-    localStorage.removeItem('userInfo')
-    
-    router.push('/auth/login')
-})
-    
+const handleLogout = async () => {
+    try { await logout() } catch { /* 请求失败时仍清除本地登录状态。 */ }
+    clearSession()
+    await router.replace('/auth/login')
 }
-
-
-
-onMounted(() => {
-    isLoggendIn.value = localStorage.getItem('token')!==null
-})
 </script>
 
 <style lang="scss" scoped>

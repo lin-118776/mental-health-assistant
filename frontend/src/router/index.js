@@ -2,6 +2,10 @@ import { createRouter, createWebHistory } from 'vue-router'
 import BackendLayout from '../components/BackendLayout.vue'
 import AuthLayout from '../components/AuthLayout.vue'
 import FrontendLayout from '../components/FrontendLayout.vue'
+import { createAuthGuard } from '../utils/authGuard.js'
+import { setSessionUser, clearSession } from '../utils/session.js'
+import { getMyProfile } from '../api/frontend.js'
+import { ElMessage } from 'element-plus'
 
 
 const BackendRouter=[
@@ -9,6 +13,7 @@ const BackendRouter=[
         path:'/back',
         redirect:'/back/dashboard',
         component:BackendLayout,
+        meta:{ requiresAuth:true, requiresAdmin:true },
         children:[
             {
                 path:'users',
@@ -88,15 +93,18 @@ const frontendRouter=[
             {
                 path:'consultation',
                 component:()=>import('@/views/consultation.vue'),
+                meta:{ requiresAuth:true },
                
             },
             {
                 path:'emotion-diary',
                 component:()=>import('@/views/emotionalDiary.vue'),        
+                meta:{ requiresAuth:true },
             },
             {
                 path:'knowledge',
                 component:()=>import('@/views/frontendKnowledge.vue'),
+                meta:{ requiresAuth:true },
                
             },
             {
@@ -107,6 +115,7 @@ const frontendRouter=[
             {
                 path:'knowledge/article/:id',
                 component:()=>import('@/views/articleDetail.vue'),
+                meta:{ requiresAuth:true },
                 props:true,
                
             }
@@ -123,34 +132,13 @@ const router =  createRouter({
 })
 
 // 路由前置守卫
-router.beforeEach((to, from, next) => {
-    const token = localStorage.getItem('token')
-    const isAuthPath = to.path.startsWith('/auth')
-    const isBackPath = to.path.startsWith('/back')
-
-    if (token) {
-        // 已登录，尝试访问登录/注册页面时跳转到后台首页
-        if (isAuthPath) {
-            next('/back/dashboard')
-        } else {
-            // 已登录，访问其他页面（如 / 或 /back 等）
-            // 确保 next() 只在目标路径不是当前路径时调用跳转，或者直接调用 next() 放行
-            if (to.matched.length === 0) {
-                next('/back/dashboard')
-            } else {
-                next()
-            }
-        }
-    } else {
-        // 未登录
-        if (isBackPath || to.meta.requiresAuth) {
-            // 访问后台页面，重定向到登录
-            next('/auth/login')
-        } else {
-            // 访问登录/注册或其它非后台页面，放行
-            next()
-        }
-    }
-})
+router.beforeEach(createAuthGuard({
+    getToken: () => localStorage.getItem('token'),
+    fetchCurrentUser: async () => (await getMyProfile({ skipAuthRedirect: true })).data,
+    setUser: setSessionUser,
+    clearSession,
+    resolve: value => router.resolve(value),
+    notify: message => ElMessage.warning(message)
+}))
 
 export default router

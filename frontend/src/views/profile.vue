@@ -37,6 +37,7 @@ import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getMyProfile, updateMyProfile, updateMyPassword } from '@/api/frontend'
+import { setSessionUser, clearSession } from '@/utils/session.js'
 
 const router = useRouter()
 const loading = ref(false)
@@ -53,7 +54,7 @@ const applyProfile = user => {
     username.value = user.username
     Object.assign(form, { nickname: user.nickname || '', email: user.email || '', phone: user.phone || '',
         gender: user.gender ?? 0, birthday: user.birthday || null })
-    localStorage.setItem('userInfo', JSON.stringify(user))
+    setSessionUser(user)
 }
 const loadProfile = async () => {
     if (loading.value) return
@@ -105,8 +106,7 @@ const savePassword = async () => {
     try {
         await updateMyPassword({ oldPassword: password.oldPassword, newPassword: password.newPassword })
         clearPassword()
-        localStorage.removeItem('token')
-        localStorage.removeItem('userInfo')
+        clearSession()
         if (!disposed) {
             ElMessage.success('密码已修改，请重新登录')
             await router.replace('/auth/login')

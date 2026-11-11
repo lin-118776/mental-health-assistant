@@ -4,7 +4,7 @@ export const register = (data) => {
     return request.post('/user/add',data)
 }
 
-export const getMyProfile = () => request.get('/user/me')
+export const getMyProfile = (config = {}) => request.get('/user/me', config)
 export const updateMyProfile = (data) => request.put('/user/me', data)
 export const updateMyPassword = (data) => request.put('/user/password', data)
 export const startSession = (data) => {

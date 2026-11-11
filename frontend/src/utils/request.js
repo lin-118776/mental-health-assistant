@@ -1,78 +1,51 @@
-
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
+import { clearSession } from './session.js'
 
+const service = axios.create({ baseURL: '/api', timeout: 5000 })
+const authCodes = new Set(['401', 'A0230', '-1', '6004'])
+const isAuthApi = config => ['/user/login', '/user/add', '/user/register'].includes(config?.url)
+let redirecting = false
 
-const service = axios.create({
-    baseURL: '/api', // 请求前缀基础URL
-    timeout: 5000 // 超时时间
+const expireSession = (config, message) => {
+    if (isAuthApi(config)) {
+        ElMessage.error(message)
+        return
+    }
+    // 旧请求的失败不能清除后来登录的账号。
+    const current = localStorage.getItem('token')
+    const sent = config?.headers?.Authorization
+    if (current && sent && sent !== `Bearer ${current}`) return
+    clearSession()
+    ElMessage.error(message)
+    if (config?.skipAuthRedirect || redirecting || window.location.pathname.startsWith('/auth/')) return
+    redirecting = true
+    const target = window.location.pathname + window.location.search + window.location.hash
+    window.location.href = `/auth/login?redirect=${encodeURIComponent(target)}`
+}
+
+service.interceptors.request.use(config => {
+    const token = localStorage.getItem('token')
+    config.headers = config.headers || {}
+    if (isAuthApi(config)) delete config.headers.Authorization
+    else if (token) config.headers.Authorization = `Bearer ${token}`
+    return config
 })
 
-//请求拦截器
-    service.interceptors.request.use(
-    (config) => {
-        //发起请求前的处理
-        //例如：添加请求头、设置请求参数等
-        // config.headers['Authorization'] = 'Bearer ' + getToken()
-        const token = localStorage.getItem('token')
-        if(token){
-            config.headers['Authorization'] = 'Bearer ' + token // 后端JWT过滤器读取Authorization请求头
-        }
-        return config
-    },
-    (error) => {
-        return Promise.reject(error)
-    }
-)
-
-    // 响应拦截器
-    service.interceptors.response.use(
-    // 响应成功处理
-    // 例如：处理响应数据、判断是否需要跳转等
-    (response) => {
-    const {data,config} = response
-    // 兼容多种成功状态码 (200, 0)
-    if(data.code == '200' || data.code == '0'){
-        return data
-    } else{
-        // 处理登录过期情况
-        if(data.code === '-1' || data.code === '401' || data.code === 'A0230'){
-            if(!config.url?.includes('/login')){
-                // 登录过期，提示用户重新登录
-                ElMessage.error(data.msg||'登录过期，请重新登录')
-                //清楚登录信息
-                localStorage.removeItem('token')
-                // 清除用户信息
-                localStorage.removeItem('userInfo')
-                window.location.href = '/auth/login'
-               
-            }
-        } else{
-            // 其他错误情况
-            ElMessage.error(data.msg||'请求失败')
-            return Promise.reject('网络请求失败...')
-        }
-    }
-        
-            return response
-        },
-        (error) => {
-            // 响应失败处理
-            // 例如：显示错误提示、跳转错误页等
-            // 后端对未登录/token过期返回HTTP 401，此处统一提示并跳转登录页
-            if (error.response && error.response.status === 401) {
-                const respData = error.response.data
-                if (!error.config?.url?.includes('/login')) {
-                    ElMessage.error((respData && respData.msg) || '登录过期，请重新登录')
-                    localStorage.removeItem('token')
-                    localStorage.removeItem('userInfo')
-                    window.location.href = '/auth/login'
-                }
-            } else {
-                ElMessage.error('网络请求失败')
-            }
-            return Promise.reject(error)
-        }
-    )
+service.interceptors.response.use(response => {
+    const { data, config } = response
+    if (String(data.code) === '200' || String(data.code) === '0') return data
+    const error = new Error(data.msg || '请求失败')
+    error.code = String(data.code)
+    if (authCodes.has(error.code)) expireSession(config, error.message)
+    else ElMessage.error(error.message)
+    return Promise.reject(error)
+}, error => {
+    const code = String(error.response?.data?.code || '')
+    const message = error.response?.data?.msg || (error.response?.status === 403 ? '没有访问权限' : '网络请求失败')
+    if (error.response?.status === 401 || authCodes.has(code)) expireSession(error.config, message)
+    else ElMessage.error(message)
+    return Promise.reject(error)
+})
 
 export default service

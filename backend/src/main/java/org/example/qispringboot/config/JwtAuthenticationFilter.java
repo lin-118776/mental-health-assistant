@@ -44,6 +44,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private ObjectMapper objectMapper;
 
     @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return "POST".equals(request.getMethod()) && List.of("/api/user/login", "/api/user/add", "/api/user/register")
+                .contains(request.getServletPath());
+    }
+
+    @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         // 1. 从请求头中获取token（例如 Authorization: Bearer xxx）
@@ -71,8 +77,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 writeErrorResponse(response, ResultCode.ACCOUNT_DISABLED);
                 return;
             }
-            String username = jwtUtil.getUsername(token);
-            Integer userType = jwtUtil.getUserType(token);
+            String username = user.getUsername();
+            Integer userType = user.getUserType();
             // 6. 根据用户类型构建角色（2:管理员，其余为普通用户）
             String role = Integer.valueOf(2).equals(userType) ? "ROLE_ADMIN" : "ROLE_USER";
             // 7. 构建登录用户对象并封装为认证信息
