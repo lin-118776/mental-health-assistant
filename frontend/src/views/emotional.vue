@@ -2,8 +2,10 @@
     <div>
         <PageHead title="情绪日志" />
         <TableSearch :formItem="formItems" @search="handleSearch" />
-        <el-table :data="tableData" style="width: 100%; margin-top: 20px;">
-            <el-table-column prop="id" label="用户ID" width="80" />
+        <el-alert v-if="listError" title="日志列表加载失败，请重试" type="error" :closable="false" />
+        <el-button v-if="listError" @click="loadPage()">重试</el-button>
+        <el-table v-loading="listLoading" :data="tableData" empty-text="没有符合条件的日志" style="width: 100%; margin-top: 20px;">
+            <el-table-column prop="userId" label="用户ID" width="80" />
             <el-table-column label="用户" width="100">
                 <template #default="scope">
                     <div style="display: flex; align-items: center; gap: 8px;">
@@ -15,7 +17,7 @@
             <el-table-column prop="diaryDate" label="记录日期" width="120" />
             <el-table-column label="情绪评分">
                 <template #default="scope">
-                    <el-rate :model-value="scope.row.moodScore" max="10" disabled></el-rate>
+                    <el-rate :model-value="scope.row.moodScore" :max="10" disabled></el-rate>
                 </template>
             </el-table-column>
             <el-table-column label="生活指标" width="100">
@@ -32,13 +34,13 @@
                 <template #default="scope">
                     <el-button text type="primary" @click="viewSessionDetail(scope.row)">详情</el-button>
 
-                    <el-button text type="danger" @click="handleDelete(scope.row)">删除</el-button>
+                    <el-button text type="danger" :loading="deletingId === scope.row.id" :disabled="deletingId !== null || listLoading" @click="handleDelete(scope.row)">删除</el-button>
                 </template>
             </el-table-column>
         </el-table>
 
-        <el-pagination style="margin-top: 25px; display: flex; justify-content: center;"
-            v-model:current-page="pagination.currentPage" v-model:page-size="pagination.size"
+        <el-pagination v-if="!listError" style="margin-top: 25px; display: flex; justify-content: center;"
+            :current-page="pagination.currentPage" :page-size="pagination.size" :disabled="listLoading || deletingId !== null"
             layout="prev, pager, next, total" :total="pagination.total" @current-change="handlePageChange" />
 
         <el-dialog title="情绪日志详情" v-model="detailDialogVisable" :close-on-click-modal="false" width="800px" @close="closeDetail">
@@ -233,26 +235,61 @@ const pagination = ref({
     total: 0
 })
 
-const handleSearch = async (formData = {}) => {
+const listLoading = ref(false)
+const listError = ref(false)
+const deletingId = ref(null)
+let appliedFilters = {}
+let listRequestId = 0
+
+const handleSearch = (formData = {}) => {
+    if (deletingId.value !== null) return
+    const userId = String(formData.userId ?? '').trim()
+    if (userId && (!/^[1-9]\d*$/.test(userId) || BigInt(userId) > 9223372036854775807n)) {
+        return ElMessage.error('用户ID必须是有效的正整数')
+    }
+    const range = formData.moodScreRange || ''
+    if (range && !['1-3','4-6','7-10'].includes(range)) return ElMessage.error('请选择有效的情绪评分范围')
+    appliedFilters = {}
+    if (userId) appliedFilters.userId = userId
+    if (range) appliedFilters.moodScreRange = range
+    pagination.value.currentPage = 1
+    return loadPage()
+}
+
+const loadPage = async () => {
+    if (disposed) return
+    const requestId = ++listRequestId
+    listLoading.value = true
+    listError.value = false
+    tableData.value = []
     const params = {
         page: pagination.value.currentPage,
         size: pagination.value.size,
-        ...formData
+        ...appliedFilters
     }
 
     try {
         const res = await getEmotionalDiary(params)
+        if (disposed || requestId !== listRequestId) return
         const { records, total } = res.data
+        const lastPage = Math.max(1, Math.ceil(total / pagination.value.size))
+        if (pagination.value.currentPage > lastPage) {
+            pagination.value.currentPage = lastPage
+            return await loadPage()
+        }
         tableData.value = records
         pagination.value.total = total
-    } catch (error) {
-        console.error('获取情绪日志失败:', error)
+    } catch {
+        if (!disposed && requestId === listRequestId) listError.value = true
+    } finally {
+        if (!disposed && requestId === listRequestId) listLoading.value = false
     }
 }
 
 const handlePageChange = (val) => {
+    if (val === pagination.value.currentPage || deletingId.value !== null) return
     pagination.value.currentPage = val
-    handleSearch()
+    return loadPage()
 }
 
 // 详情弹窗
@@ -314,21 +351,29 @@ const viewSessionDetail = async row => {
     }
 }
 
-onBeforeUnmount(() => { disposed = true; closeDetail() })
+onBeforeUnmount(() => { disposed = true; listRequestId++; closeDetail() })
 
 //删除
-const handleDelete =  (row) => {
-   ElMessageBox.confirm('确认删除吗？', '提示', {
+const handleDelete = async (row) => {
+    if (disposed || listLoading.value || deletingId.value !== null) return
+    deletingId.value = row.id
+    try {
+        await ElMessageBox.confirm('确认删除吗？', '提示', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
         type: 'warning'
-    }).then( () => {
-       deleteEmotional(row.id).then(() => {
+        })
+        if (disposed) return
+        await deleteEmotional(row.id)
+        if (disposed) return
         if (detailId.value === row.id) closeDetail()
         ElMessage.success('删除成功')
-        handleSearch()
-       })
-    })
+        await loadPage()
+    } catch {
+        // 取消或删除失败时保留原列表和筛选条件。
+    } finally {
+        if (!disposed) deletingId.value = null
+    }
 }
 
 onMounted(() => {

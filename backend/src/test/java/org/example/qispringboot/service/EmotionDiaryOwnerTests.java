@@ -86,6 +86,39 @@ class EmotionDiaryOwnerTests {
     }
 
     @Test
+    void adminListCombinesFiltersBoundsPagesAndUsesStableOrder() {
+        when(users.selectList(null)).thenReturn(List.of());
+        service.adminPage(-1L, 10000L, 7L, "1-3");
+        var page = ArgumentCaptor.forClass(Page.class);
+        var query = ArgumentCaptor.forClass(LambdaQueryWrapper.class);
+        verify(mapper).selectPage(page.capture(), query.capture());
+        assertEquals(1, page.getValue().getCurrent());
+        assertEquals(100, page.getValue().getSize());
+        String sql = query.getValue().getSqlSegment();
+        assertTrue(sql.contains("user_id ="));
+        assertTrue(sql.contains("mood_score BETWEEN"));
+        assertTrue(sql.contains("ORDER BY created_at DESC,id DESC"));
+        assertTrue(query.getValue().getParamNameValuePairs().containsValue(7L));
+        assertTrue(query.getValue().getParamNameValuePairs().containsValue(1));
+        assertTrue(query.getValue().getParamNameValuePairs().containsValue(3));
+    }
+
+    @Test
+    void invalidAdminFiltersAreRejectedBeforeDatabaseAccess() {
+        for (String range : List.of("abc", "1", "1-3-5", "0-3", "3-1", "1-11", "999999999999-10"))
+            assertThrows(BusinessException.class, () -> service.adminPage(1L, 10L, null, range));
+        assertThrows(BusinessException.class, () -> service.adminPage(1L, 10L, -1L, null));
+        verifyNoInteractions(mapper, users);
+    }
+
+    @Test
+    void adminDeletionReportsMissingRecordInsteadOfFalseSuccess() {
+        when(mapper.deleteById(11L)).thenReturn(1);
+        assertDoesNotThrow(() -> service.deleteDiary(11L));
+        assertThrows(BusinessException.class, () -> service.deleteDiary(99L));
+    }
+
+    @Test
     void boundsPagination() {
         service.myPage(7L, -2, 10000);
         var page = ArgumentCaptor.forClass(Page.class);

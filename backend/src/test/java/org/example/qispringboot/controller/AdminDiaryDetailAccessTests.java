@@ -21,6 +21,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.util.List;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 class AdminDiaryDetailAccessTests {
@@ -66,6 +67,30 @@ class AdminDiaryDetailAccessTests {
                 .andExpect(jsonPath("$.code").value(ResultCode.ACCESS_UNAUTHORIZED.getCode()));
         SecurityContextHolder.clearContext();
         mvc.perform(get("/api/emotion-diary/admin/11"))
+                .andExpect(jsonPath("$.code").value(ResultCode.UNAUTHORIZED.getCode()));
+        verifyNoInteractions(service);
+    }
+    @Test
+    void adminListAndDeletionUseProtectedEndpointsAndForwardSubmittedFilters() throws Exception {
+        login("ADMIN");
+        mvc.perform(get("/api/emotion-diary/admin/page").param("page", "2").param("size", "10")
+                .param("userId", "7").param("moodScreRange", "1-3"))
+                .andExpect(jsonPath("$.code").value("200"));
+        verify(service).adminPage(2L,10L,7L,"1-3");
+        mvc.perform(delete("/api/emotion-diary/admin/11")).andExpect(jsonPath("$.code").value("200"));
+        verify(service).deleteDiary(11L);
+    }
+    @Test
+    void ordinaryAndAnonymousUsersCannotListOrDeleteAdminDiaries() throws Exception {
+        login("USER");
+        mvc.perform(get("/api/emotion-diary/admin/page"))
+                .andExpect(jsonPath("$.code").value(ResultCode.ACCESS_UNAUTHORIZED.getCode()));
+        mvc.perform(delete("/api/emotion-diary/admin/11"))
+                .andExpect(jsonPath("$.code").value(ResultCode.ACCESS_UNAUTHORIZED.getCode()));
+        SecurityContextHolder.clearContext();
+        mvc.perform(get("/api/emotion-diary/admin/page"))
+                .andExpect(jsonPath("$.code").value(ResultCode.UNAUTHORIZED.getCode()));
+        mvc.perform(delete("/api/emotion-diary/admin/11"))
                 .andExpect(jsonPath("$.code").value(ResultCode.UNAUTHORIZED.getCode()));
         verifyNoInteractions(service);
     }

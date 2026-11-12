@@ -52,21 +52,24 @@ public class EmotionDiaryService {
     }
 
     public Page<EmotionDiaryResponseDTO> adminPage(Long current, Long size, Long userId, String moodScoreRange) {
+        if (userId != null && userId < 1) throw new BusinessException("用户ID必须为正整数");
         LambdaQueryWrapper<EmotionDiary> qw = new LambdaQueryWrapper<>();
         qw.eq(userId != null, EmotionDiary::getUserId, userId);
         if (StringUtils.hasText(moodScoreRange)) {
-            String[] parts = moodScoreRange.split("-");
+            String[] parts = moodScoreRange.trim().split("-", -1);
             try {
+                if (parts.length != 2) throw new IllegalArgumentException();
                 int min = Integer.parseInt(parts[0].trim());
                 int max = Integer.parseInt(parts[1].trim());
+                if (min < 1 || max > 10 || min > max) throw new IllegalArgumentException();
                 qw.between(EmotionDiary::getMoodScore, min, max);
-            } catch (Exception ignored) {
-                // invalid range, ignore filter
+            } catch (IllegalArgumentException e) {
+                throw new BusinessException("情绪评分范围必须在1到10之间，且下限不能大于上限");
             }
         }
-        qw.orderByDesc(EmotionDiary::getCreatedAt);
+        qw.orderByDesc(EmotionDiary::getCreatedAt).orderByDesc(EmotionDiary::getId);
 
-        Page<EmotionDiary> page = new Page<>(current, size);
+        Page<EmotionDiary> page = new Page<>(Math.max(1, current), Math.max(1, Math.min(100, size)));
         diaryMapper.selectPage(page, qw);
 
         Map<Long, String> nicknames = userMapper.selectList(null).stream()
@@ -82,7 +85,7 @@ public class EmotionDiaryService {
     }
 
     public void deleteDiary(Long id) {
-        diaryMapper.deleteById(id);
+        if (diaryMapper.deleteById(id) == 0) throw new BusinessException("日志不存在或已删除");
     }
 
     public EmotionDiaryResponseDTO adminDetail(Long id) {
