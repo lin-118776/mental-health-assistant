@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
+import { resolveFileUrl } from '../src/utils/fileUrl.js'
 
 const ref = value => ({ value })
 const computed = source => ({ get value() { return typeof source === 'function' ? source() : source.get() }, set value(value) { source.set(value) } })
@@ -11,7 +12,7 @@ const component = (file, values, expose) => {
     const script = source.split('<script setup>')[1].split('</script>')[0]
         .replace(/^\s*import .*$/gm, '').replaceAll('import.meta.url', "'file:///component.vue'")
     const watchers = []
-    const context = { ref, reactive: value => value, computed, URL, console,
+    const context = { ref, reactive: value => value, computed, URL, console, resolveFileUrl,
         nextTick: fn => Promise.resolve().then(() => fn?.()), watch: (get, callback) => watchers.push(callback),
         onMounted() {}, onBeforeUnmount() {}, defineExpose() {}, ElMessage: { warning() {}, success() {} }, ...values }
     vm.createContext(context)
@@ -24,7 +25,7 @@ test('editing updates the existing article, new form creates, and failure preser
     const calls = []
     let fail = false
     const view = component('components/ArticleDialog.vue', {
-        defineProps: () => props, defineEmits: () => () => {}, fileBaseUrl: '',
+        defineProps: () => props, defineEmits: () => () => {},
         createArticle: async data => calls.push({ type: 'create', data }),
         updateArticle: async (id, data) => { if (fail) throw Error('failed'); calls.push({ type: 'update', id, data }) }
     }, 'isEdit, formData, formRef, handleSubmit, loading, handleEditorCreated')
@@ -121,4 +122,33 @@ test('admin article reads use protected preview routes and updates use the expli
     assert.equal(calls[0][0], '/knowledge/admin/article/page')
     assert.equal(calls[1][0], '/knowledge/admin/article/draft-id')
     assert.equal(calls[2][0], '/knowledge/article/correct-id')
+})
+
+test('cover preview keeps saved upload paths and resets failed preview after a new upload', async () => {
+    const props = { modelValue: true, article: null, categories: [{ value: 1 }] }
+    const view = component('components/ArticleDialog.vue', {
+        defineProps: () => props, defineEmits: () => () => {}, crypto: { randomUUID: () => 'business-id' },
+        uploadFile: async () => ({ data: { filePath: '/uploads/new.png' } })
+    }, 'imgUrl, previewError, handleUploadRequest, handleRemove, formData, setPreview')
+    view.watchers[0]({ id: 'article', coverImage: '/uploads/existing.png' })
+    await tick()
+    assert.equal(view.imgUrl.value, '/uploads/existing.png')
+    view.previewError.value = true
+    await view.handleUploadRequest({ file: {} })
+    assert.equal(view.imgUrl.value, '/uploads/new.png')
+    assert.equal(view.formData.coverImage, '/uploads/new.png')
+    assert.equal(view.previewError.value, false)
+    view.setPreview('https://cdn.example.com/cover.png')
+    assert.equal(view.imgUrl.value, 'https://cdn.example.com/cover.png')
+    view.handleRemove()
+    assert.equal(view.imgUrl.value, '')
+    assert.equal(view.formData.coverImage, '')
+})
+
+test('knowledge list uses same-origin paths and local placeholder without an old server dependency', () => {
+    const view = component('views/frontendKnowledge.vue', { useRouter: () => ({ push() {} }) }, 'getImage, iconUrl')
+    assert.equal(view.getImage('/uploads/cover.png'), '/uploads/cover.png')
+    assert.equal(view.getImage('https://cdn.example.com/cover.png'), 'https://cdn.example.com/cover.png')
+    assert.equal(view.getImage(''), view.iconUrl)
+    assert.equal(view.getImage('javascript:invalid'), view.iconUrl)
 })

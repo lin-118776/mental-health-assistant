@@ -23,7 +23,9 @@
             <!-- 右侧内容 -->
             <div class="article-list">
                 <div v-for="item in articleList" :key="item.id" class="article-item" @click="goToArticle(item.id)">
-                    <el-image :src="getImage(item.coverImage)" style="width: 240px; height: 150px;" />
+                    <el-image :src="getImage(item.coverImage)" style="width: 240px; height: 150px;">
+                        <template #error><img :src="iconUrl" alt="暂无封面" style="width: 100%; height: 100%; object-fit: contain;" /></template>
+                    </el-image>
                     <div class="info">
                         <div class="title">
                             <h3>{{ item.title }}</h3>
@@ -67,6 +69,7 @@
     import { ref , reactive , onMounted } from 'vue'
     import { getKnowledgeList } from '@/api/frontend'
     import { useRouter } from 'vue-router'
+    import { resolveFileUrl } from '@/config/index'
  
     const iconUrl = new URL('@/assets/images/book.png', import.meta.url).href
     const router = useRouter()
@@ -97,7 +100,7 @@
  
     //获取封面图片
     const getImage = (url) =>{
-        return url ? 'http://159.75.169.224:1235' + url : 'https://file.itndedu.com/psychology_ai.png'
+        return resolveFileUrl(url) || iconUrl
     }
  
     // 分页改变时触发

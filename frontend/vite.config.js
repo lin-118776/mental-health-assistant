@@ -17,8 +17,11 @@ export default defineConfig({
         target: 'http://localhost:8080', // 本地后端地址（SpringBoot 8080）
         changeOrigin: true,
         
+      },
+      '/uploads/': {
+        target: 'http://localhost:8080',
+        changeOrigin: true
       }
     }
   }
 })
-    

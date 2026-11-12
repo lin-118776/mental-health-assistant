@@ -23,12 +23,12 @@
             <el-form-item label="封面图片"  >
                 <div class="avatar-uploader">
                     <el-upload class="avatar-uploader" action="" :before-upload="beforeUpload" :http-request="handleUploadRequest" accept="image/*" :show-file-list="false">
-                       <img v-if="imgUrl" :src="imgUrl" class="cover-image" alt="上传图片" />
+                       <img v-if="imgUrl && !previewError" :src="imgUrl" class="cover-image" alt="上传图片" @error="previewError = true" />
                        <div v-else class="cover-plaseholder">
-                        <p>点击上传封面图片</p>
+                        <p>{{ previewError ? '图片加载失败，可重新上传' : '点击上传封面图片' }}</p>
                        </div>
                     </el-upload>
-                    <div v-if="imgUrl" class="cover-remove">
+                    <div v-if="formData.coverImage" class="cover-remove">
                         <el-button type="danger" @click="handleRemove" size="small">移除封面</el-button>
                     </div>
                 </div>
@@ -70,7 +70,7 @@ import { ElDialog } from 'element-plus'
 import { computed, reactive, ref,nextTick,watch } from 'vue';
 import { ElMessage } from 'element-plus'
 import { uploadFile } from '@/api/admin'
-import { fileBaseUrl } from '@/config/index'
+import { resolveFileUrl } from '@/config/index'
 import RichTextEditor from '@/components/RichTextEditor.vue'
 import { createArticle,updateArticle } from '@/api/admin'
 
@@ -115,7 +115,7 @@ watch(()=>props.article, (newVal)=>{
             tagArray: newVal?.tagArray || (newVal?.tags ? newVal.tags.split(',') : [])
         })
         businessId.value = newVal?.id || null
-        imgUrl.value = newVal?.coverImage ? fileBaseUrl + newVal.coverImage : ''
+        setPreview(newVal?.coverImage)
     })
 })
 
@@ -155,7 +155,7 @@ const resetForm = () => {
         tagArray: [],
         id: ''
     })
-    imgUrl.value = ''
+    setPreview('')
     if (editorInstance.value) {
         editorInstance.value.clear()
     }
@@ -167,7 +167,7 @@ const setFormData = (data) => {
         ...data,
         tagArray: data.tags ? data.tags.split(',') : []
     })
-    imgUrl.value = data.coverImage ? (fileBaseUrl + data.coverImage) : ''
+    setPreview(data.coverImage)
     if (editorInstance.value) {
         editorInstance.value.setHtml(data.content || '')
     }
@@ -192,6 +192,11 @@ const commonTags = [ '情绪管理','焦虑','抑郁','压力','睡眠','冥想'
 
 // 上传封面图片前的校验函数
 const imgUrl = ref('')
+const previewError = ref(false)
+const setPreview = value => {
+    imgUrl.value = resolveFileUrl(value)
+    previewError.value = false
+}
 const beforeUpload = (file) => {
     const isLt5M = file.size / 1024 / 1024 < 5
     const isJPG = file.type === 'image/jpeg'
@@ -216,14 +221,14 @@ const handleUploadRequest = async ({file}) => {
     })
 
     //拼接完整图片
-    imgUrl.value = fileBaseUrl + res.data.filePath
+    setPreview(res.data.filePath)
     formData.coverImage = res.data.filePath
 
 }
 
 // 移除封面图片
 const handleRemove = () =>{
-    imgUrl.value = ''
+    setPreview('')
     formData.coverImage = ''
 }
 

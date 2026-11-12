@@ -86,9 +86,9 @@ npm install
 npm run dev
 ```
 
-打开终端显示的地址，默认是 `http://localhost:5173`。现有 Vite 配置把 `/api` 请求代理到 `http://localhost:8080`，因此本地开发时后端应使用 `8080` 端口。
+打开终端显示的地址，默认是 `http://localhost:5173`。现有 Vite 配置把 `/api` 和 `/uploads/` 请求代理到 `http://localhost:8080`，因此本地开发时后端应使用 `8080` 端口。
 
-文件保存在后端启动工作目录的 `uploads/` 中，后端通过 `/uploads/` 提供访问。现有 Vite 开发代理只包含 `/api`；若前端开发地址下的上传图片出现 404，可直接到 `http://localhost:8080/uploads/...` 核对文件。正式部署需同时代理 `/api/` 和 `/uploads/`，见下方示例。
+文件保存在后端启动工作目录的 `uploads/` 中，后端通过 `/uploads/` 提供访问。前台封面和后台预览默认使用同源路径，由 Vite 开发代理或正式部署的反向代理转发，不再拼接固定服务器地址。已有完整 HTTP(S) 图片地址保持原样。正式部署需同时代理 `/api/` 和 `/uploads/`，见下方示例。
 
 ## 4. 创建第一个管理员
 
@@ -156,7 +156,7 @@ server {
 前端权限测试在 `frontend` 目录执行：
 
 ```powershell
-node --test tests/authGuard.test.js tests/authRequest.test.js tests/knowledgePublication.test.js
+node --test tests/authGuard.test.js tests/authRequest.test.js tests/knowledgePublication.test.js tests/fileUrl.test.js
 npm run build
 ```
 
