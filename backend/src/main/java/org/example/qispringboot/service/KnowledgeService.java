@@ -1,6 +1,7 @@
 package org.example.qispringboot.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import jakarta.annotation.Resource;
 import org.example.qispringboot.DTO.command.KnowledgeArticleCommandDTO;
@@ -52,7 +53,8 @@ public class KnowledgeService {
                 .eq(status != null, KnowledgeArticle::getStatus, status);
         applySort(qw, sortField, sortDirection);
 
-        Page<KnowledgeArticle> page = new Page<>(current, size);
+        qw.orderByDesc(KnowledgeArticle::getId);
+        Page<KnowledgeArticle> page = new Page<>(Math.max(1, current), Math.max(1, Math.min(100, size)));
         articleMapper.selectPage(page, qw);
 
         Map<Long, String> categoryNames = loadCategoryNames();
@@ -67,17 +69,28 @@ public class KnowledgeService {
         return result;
     }
 
-    public KnowledgeArticleResponseDTO getArticleDetail(String id) {
+    public Page<KnowledgeArticleResponseDTO> pagePublishedArticles(Long current, Long size, String title,
+            Long categoryId, String sortField, String sortDirection) {
+        return pageArticles(current, size, title, categoryId, 1, sortField, sortDirection);
+    }
+
+    public KnowledgeArticleResponseDTO getAdminArticleDetail(String id) {
         KnowledgeArticle article = articleMapper.selectById(id);
         if (article == null) {
             throw new BusinessException("article not found");
         }
-        int readCount = (article.getReadCount() == null ? 0 : article.getReadCount()) + 1;
-        KnowledgeArticle update = new KnowledgeArticle();
-        update.setId(id);
-        update.setReadCount(readCount);
-        articleMapper.updateById(update);
-        article.setReadCount(readCount);
+        return toResponse(article, loadCategoryNames(), loadAuthorNames());
+    }
+
+    public KnowledgeArticleResponseDTO getPublishedArticleDetail(String id) {
+        KnowledgeArticle article = articleMapper.selectOne(new LambdaQueryWrapper<KnowledgeArticle>()
+                .eq(KnowledgeArticle::getId, id).eq(KnowledgeArticle::getStatus, 1));
+        if (article == null) throw new BusinessException("文章不存在或已下线");
+        int changed = articleMapper.update(null, new LambdaUpdateWrapper<KnowledgeArticle>()
+                .eq(KnowledgeArticle::getId, id).eq(KnowledgeArticle::getStatus, 1)
+                .setSql("read_count=COALESCE(read_count,0)+1, updated_at=updated_at"));
+        if (changed == 0) throw new BusinessException("文章不存在或已下线");
+        article.setReadCount((article.getReadCount() == null ? 0 : article.getReadCount()) + 1);
         return toResponse(article, loadCategoryNames(), loadAuthorNames());
     }
 
@@ -100,36 +113,29 @@ public class KnowledgeService {
     }
 
     public void updateArticle(String id, KnowledgeArticleCommandDTO dto) {
-        KnowledgeArticle article = articleMapper.selectById(id);
-        if (article == null) {
-            throw new BusinessException("article not found");
-        }
-        article.setTitle(dto.getTitle());
-        article.setCategoryId(dto.getCategoryId());
-        article.setSummary(dto.getSummary());
-        article.setContent(dto.getContent());
-        article.setCoverImage(dto.getCoverImage());
-        article.setTags(dto.getTags());
-        article.setUpdatedAt(LocalDateTime.now());
-        articleMapper.updateById(article);
+        // 内容编辑不回写读数、作者或状态，避免把并发下线的文章重新发布。
+        int changed = articleMapper.update(null, new LambdaUpdateWrapper<KnowledgeArticle>()
+                .eq(KnowledgeArticle::getId, id).set(KnowledgeArticle::getTitle, dto.getTitle())
+                .set(KnowledgeArticle::getCategoryId, dto.getCategoryId())
+                .set(KnowledgeArticle::getSummary, dto.getSummary()).set(KnowledgeArticle::getContent, dto.getContent())
+                .set(KnowledgeArticle::getCoverImage, dto.getCoverImage()).set(KnowledgeArticle::getTags, dto.getTags())
+                .set(KnowledgeArticle::getUpdatedAt, LocalDateTime.now()));
+        if (changed == 0) throw new BusinessException("文章不存在或已删除");
     }
 
     public void updateStatus(String id, String statusValue) {
         Integer code = parseStatus(statusValue);
-        KnowledgeArticle article = articleMapper.selectById(id);
-        if (article == null) {
-            throw new BusinessException("article not found");
-        }
-        article.setStatus(code);
-        article.setUpdatedAt(LocalDateTime.now());
-        if (Integer.valueOf(1).equals(code) && article.getPublishedAt() == null) {
-            article.setPublishedAt(LocalDateTime.now());
-        }
-        articleMapper.updateById(article);
+        var now = LocalDateTime.now();
+        var update = new LambdaUpdateWrapper<KnowledgeArticle>().eq(KnowledgeArticle::getId, id)
+                .set(KnowledgeArticle::getStatus, code).set(KnowledgeArticle::getUpdatedAt, now);
+        if (code == 1) update.setSql("published_at=COALESCE(published_at, {0})", now);
+        if (articleMapper.update(null, update) == 0) throw new BusinessException("文章不存在或已删除");
     }
 
     public void deleteArticle(String id) {
-        articleMapper.deleteById(id);
+        int changed = articleMapper.delete(new LambdaQueryWrapper<KnowledgeArticle>()
+                .eq(KnowledgeArticle::getId, id).in(KnowledgeArticle::getStatus, 0, 2));
+        if (changed == 0) throw new BusinessException("文章不存在，或仍在发布中，请先下线再删除");
     }
 
     private void applySort(LambdaQueryWrapper<KnowledgeArticle> qw, String sortField, String sortDirection) {
@@ -153,7 +159,8 @@ public class KnowledgeService {
     }
 
     private Map<Long, String> loadAuthorNames() {
-        return userMapper.selectList(null).stream()
+        return userMapper.selectList(new LambdaQueryWrapper<User>()
+                .select(User::getId, User::getNickname, User::getUsername)).stream()
                 .collect(Collectors.toMap(User::getId, User::getDisplayName, (a, b) -> a));
     }
 
@@ -182,7 +189,9 @@ public class KnowledgeService {
 
     private Integer parseStatus(String statusValue) {
         try {
-            return Integer.valueOf(statusValue);
+            int status = Integer.parseInt(statusValue);
+            if (status < 0 || status > 2) throw new BusinessException("文章状态无效");
+            return status;
         } catch (NumberFormatException e) {
             throw new BusinessException("invalid status");
         }

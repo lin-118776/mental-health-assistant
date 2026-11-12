@@ -156,7 +156,7 @@ server {
 前端权限测试在 `frontend` 目录执行：
 
 ```powershell
-node --test tests/authGuard.test.js tests/authRequest.test.js
+node --test tests/authGuard.test.js tests/authRequest.test.js tests/knowledgePublication.test.js
 npm run build
 ```
 

@@ -6,14 +6,18 @@
                 <h1>知识文章详情</h1>
             </div>
         </div>
-        <div class="content">
+        <div class="content" v-loading="loading">
+            <el-result v-if="loadError" icon="warning" title="文章暂不可访问" sub-title="文章可能已下线或暂时加载失败，请返回知识库重试。">
+                <template #extra><router-link to="/knowledge"><el-button type="primary">返回知识库</el-button></router-link></template>
+            </el-result>
+            <template v-if="articleDetail.id && !loadError">
             <div class="diary-card">
                 <div class="title">文章信息</div>
                 <div class="sub-title">
                     <el-tag size="large" class="category-tag">{{ articleDetail.categoryName }}</el-tag>
                     <div class="flex-box">
                         <el-icon><List /></el-icon>
-                        <span>{{ dayjs(articleDetail.updatedAt).format('YYYY-MM-DD') }}</span>
+                        <span>{{ articleDetail.publishedAt ? dayjs(articleDetail.publishedAt).format('YYYY-MM-DD') : '--' }}</span>
                     </div>
                 </div>
                 <h1 class="article-title">{{ articleDetail.title }}</h1>
@@ -41,13 +45,14 @@
                     </div>
                 </div>
             </div>
+            </template>
         </div>
     </div>
 </template>
  
 <script setup>
     import { dayjs } from 'element-plus'
-    import { ref , onMounted } from 'vue'
+    import { ref, watch, onBeforeUnmount } from 'vue'
     import { getKnowledgeDetail } from '@/api/frontend'
  
     const iconUrl = new URL('@/assets/images/book.png', import.meta.url).href
@@ -57,6 +62,10 @@
     })
  
     const articleDetail = ref({})
+    const loading = ref(false)
+    const loadError = ref(false)
+    let requestId = 0
+    let disposed = false
  
     // 格式化文章内容
     const formatContent = (content) => {
@@ -71,11 +80,23 @@
         return formatted
     }
  
-    onMounted(() => {
-        getKnowledgeDetail(props.id).then(res => {
+    const loadArticle = async () => {
+        const id = ++requestId
+        articleDetail.value = {}
+        loading.value = true
+        loadError.value = false
+        try {
+            const res = await getKnowledgeDetail(props.id)
+            if (disposed || id !== requestId) return
             articleDetail.value = res.data
-        })
-    })
+        } catch {
+            if (!disposed && id === requestId) loadError.value = true
+        } finally {
+            if (!disposed && id === requestId) loading.value = false
+        }
+    }
+    watch(() => props.id, loadArticle, { immediate: true })
+    onBeforeUnmount(() => { disposed = true; requestId++ })
 </script>
  
 <style scoped lang="scss">

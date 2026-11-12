@@ -12,7 +12,7 @@ export function categoryTree(){
 }
 
 export function articlePage(params){
-    return request.get('/knowledge/article/page',{params})
+    return request.get('/knowledge/admin/article/page',{params})
 }
 export function uploadFile(file,businessInfo){
     const formData = new FormData()
@@ -33,10 +33,10 @@ export function createArticle(data){
 }
 
 export function getArticleDetail(id){
-    return request.get(`/knowledge/article/${id}`)
+    return request.get(`/knowledge/admin/article/${id}`)
 }
 export function updateArticle(id,data){
-    return request.put(`/knowledge/article/${data.id}`,data)
+    return request.put(`/knowledge/article/${id}`,data)
 }
 export function changeArticleStatus(id,data){
     return request.put(`/knowledge/article/${id}/status`,data)

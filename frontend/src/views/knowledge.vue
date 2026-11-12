@@ -27,7 +27,8 @@
             </el-table-column>
             <el-table-column prop="authorName" width="150px" label="作者" />
             <el-table-column prop="readCount" width="100px" label="阅读量" />
-            <el-table-column prop="updatedAt" width="150px" label="发布时间" />
+            <el-table-column label="状态" width="100"><template #default="scope">{{ ['草稿', '已发布', '已下线'][scope.row.status] || '未知' }}</template></el-table-column>
+            <el-table-column prop="publishedAt" width="150px" label="发布时间" />
              <el-table-column label="操作" width="240px" fixed="right">
                 <template #default="scope">
                    <el-button text type="primary" @click="handleEdit(scope.row)">编辑</el-button>
@@ -78,21 +79,23 @@ const handleSuccess = () => {
     dialogVisible.value = false
     handleSearch({})
 }
-const handleEdit = (row) => {
-    dialogVisible.value = true
-    // TODO: 设置编辑数据
-   if(!row.id)
-   {
-     currentArticle.value = null
-    dialogVisible.value = true
-    
-   } else
-   {
-    getArticleDetail(row.id).then(res=>{
+let editRequestId = 0
+const handleEdit = async (row) => {
+    const requestId = ++editRequestId
+    dialogVisible.value = false
+    currentArticle.value = null
+    if (!row.id) {
+        dialogVisible.value = true
+        return
+    }
+    try {
+        const res = await getArticleDetail(row.id)
+        if (requestId !== editRequestId) return
         currentArticle.value = res.data
         dialogVisible.value = true
-    })
-   }
+    } catch {
+        // 详情失败时不打开空白或上一篇文章的编辑表单。
+    }
 }
 // 发布文章
 const handlePublish = (row) => {

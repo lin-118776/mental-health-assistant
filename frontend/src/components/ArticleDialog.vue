@@ -102,25 +102,26 @@ const dialogVisible = computed({
     }
 })
 
-const isEdit = computed(()=>{!!props.article?.id})
+const isEdit = computed(() => Boolean(props.article?.id))
 
 //监听编辑数据
 watch(()=>props.article, (newVal)=>{
-    if(newVal){
-        nextTick(()=>{
-             Object.assign(formData, newVal)
-        //使用现有Id
-        businessId.value = newVal.id
-
-        imgUrl.value = fileBaseUrl + newVal.coverImage
-           
-        })  
-    }
+    nextTick(() => {
+        Object.assign(formData, {
+            id: newVal?.id || '', title: newVal?.title || '', content: newVal?.content || '',
+            summary: newVal?.summary || '', coverImage: newVal?.coverImage || '',
+            categoryId: newVal?.categoryId ?? props.categories[0]?.value ?? '',
+            tags: newVal?.tags || '',
+            tagArray: newVal?.tagArray || (newVal?.tags ? newVal.tags.split(',') : [])
+        })
+        businessId.value = newVal?.id || null
+        imgUrl.value = newVal?.coverImage ? fileBaseUrl + newVal.coverImage : ''
+    })
 })
 
 const handleClose =()=>{
     //重置表单
-    formRef.value.resetFields()
+    formRef.value?.resetFields()
     //重置业务Id
     businessId.value = null
     //重置封面图片
@@ -233,7 +234,7 @@ const handleEditorCreated = (editor) => {
     editorInstance.value = editor
     if(formData.content && editor){
         nextTick(()=>{
-            editor.setHTML(formData.content)
+            editor.setHtml(formData.content)
         })
     }
 }
@@ -248,16 +249,15 @@ const btnPreview = ref(false)
 const formRef = ref()
 const loading = ref(false)
 const handleSubmit = async () => {
-   if (!formRef.value) return
-   
-   formRef.value.validate(async (valid) => {
-    if(valid){
+   if (!formRef.value || loading.value) return
+   loading.value = true
+   try {
+        if (!await formRef.value.validate()) return
         if (!formData.content || formData.content === '<p><br></p>') {
             ElMessage.warning('文章内容不能为空')
             return
         }
 
-        loading.value = true
         const submitData ={
             ...formData,
             tags: formData.tagArray.join(',')
@@ -266,18 +266,16 @@ const handleSubmit = async () => {
         
         if(!isEdit.value){
             submitData.id = businessId.value
-            createArticle(submitData).then(res=>{
-                loading.value=false
-                emit('success')
-            })
+            await createArticle(submitData)
         }else{
-            updateArticle(props.id,submitData).then(res=>{
-                loading.value=false
-                emit('success')
-            })
+            await updateArticle(props.article.id,submitData)
         }
-    }
-   })
+        emit('success')
+   } catch {
+        // 校验或保存失败时保留表单，并允许更正后重试。
+   } finally {
+        loading.value = false
+   }
 }
 
 

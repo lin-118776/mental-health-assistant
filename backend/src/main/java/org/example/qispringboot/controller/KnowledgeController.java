@@ -6,6 +6,8 @@ import org.example.qispringboot.DTO.command.KnowledgeArticleCommandDTO;
 import org.example.qispringboot.DTO.command.KnowledgeArticleStatusDTO;
 import org.example.qispringboot.DTO.response.KnowledgeArticleResponseDTO;
 import org.example.qispringboot.common.Result;
+import org.example.qispringboot.common.ResultCode;
+import org.example.qispringboot.exception.BusinessException;
 import org.example.qispringboot.entity.KnowledgeCategory;
 import org.example.qispringboot.security.LoginUser;
 import org.example.qispringboot.service.KnowledgeService;
@@ -46,7 +48,6 @@ public class KnowledgeController {
             @RequestParam(value = "size", required = false) Long size,
             @RequestParam(value = "title", required = false) String title,
             @RequestParam(value = "categoryId", required = false) Long categoryId,
-            @RequestParam(value = "status", required = false) String status,
             @RequestParam(value = "sortField", required = false) String sortField,
             @RequestParam(value = "sortDirection", required = false) String sortDirection) {
         long current = currentPage != null ? currentPage : (page != null ? page : 1);
@@ -57,13 +58,31 @@ public class KnowledgeController {
         if (pageSizeValue < 1) {
             pageSizeValue = 10;
         }
-        return Result.OK(knowledgeService.pageArticles(current, pageSizeValue, title, categoryId,
-                parseStatus(status), sortField, sortDirection));
+        return Result.OK(knowledgeService.pagePublishedArticles(current, pageSizeValue, title, categoryId,
+                sortField, sortDirection));
     }
 
     @GetMapping("/article/{id}")
     public Result<KnowledgeArticleResponseDTO> articleDetail(@PathVariable String id) {
-        return Result.OK(knowledgeService.getArticleDetail(id));
+        return Result.OK(knowledgeService.getPublishedArticleDetail(id));
+    }
+
+    @GetMapping("/admin/article/page")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Result<Page<KnowledgeArticleResponseDTO>> adminArticlePage(
+            @RequestParam(value = "currentPage", defaultValue = "1") Long currentPage,
+            @RequestParam(value = "pageSize", defaultValue = "10") Long pageSize,
+            @RequestParam(required = false) String title, @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) String status, @RequestParam(required = false) String sortField,
+            @RequestParam(required = false) String sortDirection) {
+        return Result.OK(knowledgeService.pageArticles(currentPage, pageSize, title, categoryId,
+                parseStatus(status), sortField, sortDirection));
+    }
+
+    @GetMapping("/admin/article/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Result<KnowledgeArticleResponseDTO> adminArticleDetail(@PathVariable String id) {
+        return Result.OK(knowledgeService.getAdminArticleDetail(id));
     }
 
     @PostMapping("/article")
@@ -83,7 +102,7 @@ public class KnowledgeController {
     @PutMapping("/article/{id}/status")
     @PreAuthorize("hasRole('ADMIN')")
     public Result<Void> updateArticleStatus(@PathVariable String id,
-                                            @RequestBody KnowledgeArticleStatusDTO dto) {
+                                            @Valid @RequestBody KnowledgeArticleStatusDTO dto) {
         knowledgeService.updateStatus(id, dto.getStatus());
         return Result.OK();
     }
@@ -98,7 +117,7 @@ public class KnowledgeController {
     private LoginUser getCurrentLoginUser() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !(authentication.getPrincipal() instanceof LoginUser loginUser)) {
-            return new LoginUser(null, null, 1);
+            throw new BusinessException(ResultCode.UNAUTHORIZED);
         }
         return loginUser;
     }
@@ -106,9 +125,11 @@ public class KnowledgeController {
     private Integer parseStatus(String status) {
         if (StringUtils.hasText(status)) {
             try {
-                return Integer.valueOf(status);
+                int value = Integer.parseInt(status);
+                if (value < 0 || value > 2) throw new BusinessException("文章状态无效");
+                return value;
             } catch (NumberFormatException ignored) {
-                return null;
+                throw new BusinessException("文章状态无效");
             }
         }
         return null;
