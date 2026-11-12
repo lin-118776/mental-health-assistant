@@ -112,6 +112,8 @@ npm run dev
 
 文件保存在后端启动工作目录的 `uploads/` 中，后端通过 `/uploads/` 提供访问。前台封面和后台预览默认使用同源路径，由 Vite 开发代理或正式部署的反向代理转发，不再拼接固定服务器地址。已有完整 HTTP(S) 图片地址保持原样。正式部署需同时代理 `/api/` 和 `/uploads/`，见下方示例。
 
+文章封面上传仅限管理员。前后端统一允许 JPG/JPEG/PNG，单文件不超过 5 MiB；后端会验证真实图片内容，宽高不超过 8192 像素且总像素不超过 2000 万。有效图片原样保存，不重新压缩。Servlet 总请求上限为 6 MiB，为 multipart 字段和头部留出空间；代理层也需使用相应请求上限。
+
 ## 4. 创建第一个管理员
 
 1. 在前端注册账号，需要用户名、有效手机号和密码。首次注册默认是普通用户。
@@ -147,6 +149,7 @@ java -Duser.timezone=Asia/Shanghai -jar target/qi-springboot-0.0.1-SNAPSHOT.jar
 server {
     listen 80;
     server_name localhost;
+    client_max_body_size 6m;
     root /srv/mental-health-assistant/frontend/dist;
 
     location /api/ {
@@ -178,7 +181,7 @@ server {
 前端权限测试在 `frontend` 目录执行：
 
 ```powershell
-node --test tests/authGuard.test.js tests/authRequest.test.js tests/knowledgePublication.test.js tests/fileUrl.test.js tests/registration.test.js
+node --test tests/authGuard.test.js tests/authRequest.test.js tests/knowledgePublication.test.js tests/fileUrl.test.js tests/registration.test.js tests/coverUpload.test.js
 npm run build
 ```
 

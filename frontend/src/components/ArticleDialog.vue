@@ -22,14 +22,16 @@
             </el-form-item>
             <el-form-item label="封面图片"  >
                 <div class="avatar-uploader">
-                    <el-upload class="avatar-uploader" action="" :before-upload="beforeUpload" :http-request="handleUploadRequest" accept="image/*" :show-file-list="false">
+                    <el-upload class="avatar-uploader" action="" :before-upload="beforeUpload" :http-request="handleUploadRequest" accept=".jpg,.jpeg,.png" :show-file-list="false" :disabled="uploading || loading">
                        <img v-if="imgUrl && !previewError" :src="imgUrl" class="cover-image" alt="上传图片" @error="previewError = true" />
                        <div v-else class="cover-plaseholder">
                         <p>{{ previewError ? '图片加载失败，可重新上传' : '点击上传封面图片' }}</p>
                        </div>
                     </el-upload>
+                    <p>支持JPG/JPEG/PNG，最大5MB；宽高不超过8192像素，总像素不超过2000万。</p>
+                    <p v-if="uploading">封面上传中，请稍候…</p>
                     <div v-if="formData.coverImage" class="cover-remove">
-                        <el-button type="danger" @click="handleRemove" size="small">移除封面</el-button>
+                        <el-button type="danger" @click="handleRemove" size="small" :disabled="uploading || loading">移除封面</el-button>
                     </div>
                 </div>
             
@@ -55,7 +57,7 @@
                 {{ btnPreview ? '隐藏效果' : '预览效果' }}
                 </el-button>
                 <el-button @click="handleClose">取消</el-button>
-                <el-button type="primary" @click="handleSubmit" :loading="loading">
+                <el-button type="primary" @click="handleSubmit" :loading="loading" :disabled="uploading">
                 {{ isEdit ? '更新文章' : '创建文章' }}
                 </el-button>
             </div>
@@ -73,6 +75,7 @@ import { uploadFile } from '@/api/admin'
 import { resolveFileUrl } from '@/config/index'
 import RichTextEditor from '@/components/RichTextEditor.vue'
 import { createArticle,updateArticle } from '@/api/admin'
+import { coverFileError } from '@/utils/coverUpload.js'
 
 
 
@@ -106,6 +109,8 @@ const isEdit = computed(() => Boolean(props.article?.id))
 
 //监听编辑数据
 watch(()=>props.article, (newVal)=>{
+    uploadRequestId++
+    uploading.value = false
     nextTick(() => {
         Object.assign(formData, {
             id: newVal?.id || '', title: newVal?.title || '', content: newVal?.content || '',
@@ -120,6 +125,8 @@ watch(()=>props.article, (newVal)=>{
 })
 
 const handleClose =()=>{
+    uploadRequestId++
+    uploading.value = false
     //重置表单
     formRef.value?.resetFields()
     //重置业务Id
@@ -145,6 +152,8 @@ const formData = reactive({
 
 // 重置表单
 const resetForm = () => {
+    uploadRequestId++
+    uploading.value = false
     Object.assign(formData, {
         title: '',
         content: '',
@@ -193,37 +202,34 @@ const commonTags = [ '情绪管理','焦虑','抑郁','压力','睡眠','冥想'
 // 上传封面图片前的校验函数
 const imgUrl = ref('')
 const previewError = ref(false)
+const uploading = ref(false)
+let uploadRequestId = 0
 const setPreview = value => {
     imgUrl.value = resolveFileUrl(value)
     previewError.value = false
 }
 const beforeUpload = (file) => {
-    const isLt5M = file.size / 1024 / 1024 < 5
-    const isJPG = file.type === 'image/jpeg'
-    const isPNG = file.type === 'image/png'
-    if (!isJPG && !isPNG) {
-        ElMessage.error('上传图片只能是 JPG/PNG 格式!')
-        return false
-}
-if (!isLt5M) {
-    ElMessage.error('上传图片大小不能超过 5MB!')
-    return false
-}
-return true
-
+    if (uploading.value) return false
+    const error = coverFileError(file)
+    if (error) ElMessage.error(error)
+    return !error
 }
 const businessId = ref(null)
 const handleUploadRequest = async ({file}) => {
-   //UUID生成
-   businessId.value = crypto.randomUUID()
-   const res = await uploadFile(file,{
-        id:businessId.value
-    })
-
-    //拼接完整图片
-    setPreview(res.data.filePath)
-    formData.coverImage = res.data.filePath
-
+    if (uploading.value) throw new Error('封面正在上传，请稍候')
+    const requestId = ++uploadRequestId
+    uploading.value = true
+    if (!businessId.value) businessId.value = props.article?.id || crypto.randomUUID()
+    try {
+        const res = await uploadFile(file, { id: businessId.value })
+        if (requestId === uploadRequestId) {
+            setPreview(res.data.filePath)
+            formData.coverImage = res.data.filePath
+        }
+        return res.data
+    } finally {
+        if (requestId === uploadRequestId) uploading.value = false
+    }
 }
 
 // 移除封面图片
@@ -254,7 +260,7 @@ const btnPreview = ref(false)
 const formRef = ref()
 const loading = ref(false)
 const handleSubmit = async () => {
-   if (!formRef.value || loading.value) return
+   if (!formRef.value || loading.value || uploading.value) return
    loading.value = true
    try {
         if (!await formRef.value.validate()) return

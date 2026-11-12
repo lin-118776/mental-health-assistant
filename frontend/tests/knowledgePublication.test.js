@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import vm from 'node:vm'
 import { resolveFileUrl } from '../src/utils/fileUrl.js'
+import { coverFileError } from '../src/utils/coverUpload.js'
 
 const ref = value => ({ value })
 const computed = source => ({ get value() { return typeof source === 'function' ? source() : source.get() }, set value(value) { source.set(value) } })
@@ -12,9 +13,9 @@ const component = (file, values, expose) => {
     const script = source.split('<script setup>')[1].split('</script>')[0]
         .replace(/^\s*import .*$/gm, '').replaceAll('import.meta.url', "'file:///component.vue'")
     const watchers = []
-    const context = { ref, reactive: value => value, computed, URL, console, resolveFileUrl,
+    const context = { ref, reactive: value => value, computed, URL, console, resolveFileUrl, coverFileError,
         nextTick: fn => Promise.resolve().then(() => fn?.()), watch: (get, callback) => watchers.push(callback),
-        onMounted() {}, onBeforeUnmount() {}, defineExpose() {}, ElMessage: { warning() {}, success() {} }, ...values }
+        onMounted() {}, onBeforeUnmount() {}, defineExpose() {}, ElMessage: { warning() {}, success() {}, error() {} }, ...values }
     vm.createContext(context)
     vm.runInContext(`${script}\nglobalThis.test = {${expose}}`, context)
     return { ...context.test, watchers }
@@ -151,4 +152,48 @@ test('knowledge list uses same-origin paths and local placeholder without an old
     assert.equal(view.getImage('https://cdn.example.com/cover.png'), 'https://cdn.example.com/cover.png')
     assert.equal(view.getImage(''), view.iconUrl)
     assert.equal(view.getImage('javascript:invalid'), view.iconUrl)
+})
+
+test('pending cover upload blocks saves and duplicate uploads; closing ignores a late result', async () => {
+    let finish
+    let uploads = 0
+    let saves = 0
+    const props = { modelValue: true, article: {id:'article-id'}, categories: [] }
+    const view = component('components/ArticleDialog.vue', {
+        defineProps: () => props, defineEmits: () => () => {},
+        uploadFile: (file, info) => { uploads++; assert.equal(info.id, 'article-id'); return new Promise(resolve => { finish = resolve }) },
+        updateArticle: async () => { saves++ }
+    }, 'handleUploadRequest, handleSubmit, handleClose, formRef, formData, uploading, imgUrl')
+    view.formRef.value = {validate: async () => true, resetFields() {}}
+    view.formData.content = '<p>正文</p>'
+    const upload = view.handleUploadRequest({file:{}})
+    assert.equal(view.uploading.value, true)
+    await view.handleSubmit()
+    assert.equal(saves, 0)
+    await assert.rejects(view.handleUploadRequest({file:{}}))
+    assert.equal(uploads, 1)
+    view.handleClose()
+    finish({data:{filePath:'/uploads/late.png'}})
+    await upload
+    assert.equal(view.uploading.value, false)
+    assert.equal(view.formData.coverImage, '')
+    assert.equal(view.imgUrl.value, '')
+})
+
+test('failed cover upload preserves the previous cover and permits retry', async () => {
+    const props = {modelValue:true, article:{id:'article-id'}, categories:[]}
+    let fail = true
+    const view = component('components/ArticleDialog.vue', {
+        defineProps: () => props, defineEmits: () => () => {},
+        uploadFile: async () => { if (fail) throw Error('failed'); return {data:{filePath:'/uploads/retry.png'}} }
+    }, 'handleUploadRequest, formData, setPreview, imgUrl, uploading')
+    view.formData.coverImage = '/uploads/previous.png'
+    view.setPreview(view.formData.coverImage)
+    await assert.rejects(view.handleUploadRequest({file:{}}))
+    assert.equal(view.uploading.value, false)
+    assert.equal(view.formData.coverImage, '/uploads/previous.png')
+    assert.equal(view.imgUrl.value, '/uploads/previous.png')
+    fail = false
+    await view.handleUploadRequest({file:{}})
+    assert.equal(view.formData.coverImage, '/uploads/retry.png')
 })

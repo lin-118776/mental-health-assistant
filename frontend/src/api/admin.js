@@ -20,12 +20,8 @@ export function uploadFile(file,businessInfo){
     formData.append('businessType', 'ARTICLE')
     formData.append('businessId', businessInfo.id)
     formData.append('businessField', 'cover')
-    return request.post('/file/upload',formData, {
-        Headers:{
-            'content-type': 'multipart/form-data'
-        }
-    }
-    ) 
+    // FormData由浏览器生成带boundary的Content-Type。
+    return request.post('/file/upload', formData, { timeout: 60000 })
 }            
 
 export function createArticle(data){

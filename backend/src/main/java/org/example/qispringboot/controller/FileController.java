@@ -9,6 +9,7 @@ import org.example.qispringboot.security.LoginUser;
 import org.example.qispringboot.service.FileService;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -23,6 +24,7 @@ public class FileController {
     private FileService fileService;
 
     @PostMapping("/upload")
+    @PreAuthorize("hasRole('ADMIN')")
     public Result<FileInfoDTO> upload(@RequestParam("file") MultipartFile file,
                                       @RequestParam(value = "businessType", required = false) String businessType,
                                       @RequestParam(value = "businessId", required = false) String businessId,

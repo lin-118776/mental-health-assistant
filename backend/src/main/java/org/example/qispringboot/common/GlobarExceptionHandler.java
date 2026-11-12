@@ -7,6 +7,9 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.stream.Collectors;
@@ -18,6 +21,12 @@ import java.util.stream.Collectors;
 @Slf4j
 @RestControllerAdvice
 public class GlobarExceptionHandler {
+
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    @ResponseStatus(HttpStatus.PAYLOAD_TOO_LARGE)
+    public Result<Void> handleUploadSize(MaxUploadSizeExceededException e) {
+        return Result.error(ResultCode.FILE_SIZE_EXCEEDED);
+    }
 
     /**
      * 处理参数校验异常（@Valid校验失败）

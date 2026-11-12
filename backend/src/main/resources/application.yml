@@ -1,4 +1,8 @@
 spring:
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
   # 硅基流动大模型配置（OpenAI兼容协议）
   ai:
     openai:
@@ -25,7 +29,3 @@ jwt:
   refresh-expiration: 604800000  # 刷新token过期时间：7天（毫秒）
   header: Authorization  # token请求头名称
   token-prefix: "Bearer "  # token前缀
-  servlet:
-    multipart:
-      max-file-size: 10MB
-      max-request-size: 10MB
