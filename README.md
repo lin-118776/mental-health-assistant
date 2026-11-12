@@ -57,6 +57,28 @@ SHOW TABLES;
 
 这两个脚本可以重复执行，但 `CREATE TABLE IF NOT EXISTS` **不会升级或修复已有表结构**。已有数据的环境应先备份并单独核对字段差异，不要将本步骤当作迁移脚本。原有 `backend/sql/chat.sql` 仅包含聊天表，新环境使用完整的 `schema.sql` 即可。
 
+### 已有数据库：邮箱唯一索引
+
+新建数据库已包含 `uk_user_email`，注册和个人资料共用同一邮箱唯一性约束，未填写邮箱保存为 `NULL`。旧环境需人工核对，以下命令不会由程序自动执行。
+
+先备份，并检查已有索引、重复的非空邮箱和空字符串：
+
+```sql
+SHOW INDEX FROM `user` WHERE Key_name = 'uk_user_email';
+SELECT email, COUNT(*) AS account_count FROM `user`
+WHERE email IS NOT NULL AND TRIM(email) <> '' GROUP BY email HAVING COUNT(*) > 1;
+SELECT id, username, email FROM `user` WHERE email IS NOT NULL AND TRIM(email) = '';
+```
+
+如存在重复的非空邮箱，先人工确认账号归属并修正，不能直接合并或删除用户。确认 `email` 列与新建脚本一样允许 `NULL`、且尚无唯一索引后，才执行：
+
+```sql
+UPDATE `user` SET email = NULL WHERE email IS NOT NULL AND TRIM(email) = '';
+ALTER TABLE `user` ADD UNIQUE KEY `uk_user_email` (`email`);
+```
+
+此操作只规范空邮箱并增加唯一约束，不重置密码或变更角色。未完成旧库索引升级时，应用层重复检查不能替代数据库对并发注册的约束。
+
 ## 2. 启动后端
 
 数据库账号需要对该库具有查询、插入、更新、删除权限。打开一个 PowerShell 窗口，将下列占位值替换为自己的配置；这些标准 Spring 环境变量会覆盖 `application.yml`：
@@ -156,7 +178,7 @@ server {
 前端权限测试在 `frontend` 目录执行：
 
 ```powershell
-node --test tests/authGuard.test.js tests/authRequest.test.js tests/knowledgePublication.test.js tests/fileUrl.test.js
+node --test tests/authGuard.test.js tests/authRequest.test.js tests/knowledgePublication.test.js tests/fileUrl.test.js tests/registration.test.js
 npm run build
 ```
 

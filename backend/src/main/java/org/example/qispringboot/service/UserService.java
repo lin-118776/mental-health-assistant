@@ -19,6 +19,9 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.dao.DuplicateKeyException;
+
+import java.nio.charset.StandardCharsets;
 
 import java.time.LocalDateTime;
 
@@ -46,6 +49,10 @@ public class UserService {
      * @return 统一响应
      */
     public Result<Void> register(UserRegisterCommandDTO commandDTO) {
+        if (commandDTO.getPassword().getBytes(StandardCharsets.UTF_8).length > 72)
+            throw new BusinessException("密码过长，请减少中文字符");
+        String email = commandDTO.getEmail() == null || commandDTO.getEmail().isBlank()
+                ? null : commandDTO.getEmail().trim();
         // 1. 校验用户名是否已注册
         Long usernameCount = userMapper.selectCount(
                 new LambdaQueryWrapper<User>().eq(User::getUsername, commandDTO.getUsername()));
@@ -58,19 +65,27 @@ public class UserService {
         if (phoneCount != null && phoneCount > 0) {
             throw new BusinessException(ResultCode.PHONE_EXIST);
         }
+        if (email != null && userMapper.selectCount(new LambdaQueryWrapper<User>().eq(User::getEmail, email)) > 0)
+            throw new BusinessException("邮箱已被注册");
         // 3. 构建用户实体（密码使用BCrypt加密存储）
         User user = User.builder()
                 .username(commandDTO.getUsername())
                 .phone(commandDTO.getPhone())
                 .password(passwordEncoder.encode(commandDTO.getPassword()))
-                .email(commandDTO.getEmail())
+                .email(email)
+                .nickname(commandDTO.getNickname() == null || commandDTO.getNickname().isBlank()
+                        ? null : commandDTO.getNickname().trim())
                 .userType(UserType.USER.getCode())          // 注册默认普通用户
                 .status(UserStatus.NORMAL.getCode())        // 注册默认正常状态
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
         // 4. 插入数据库
-        userMapper.insert(user);
+        try {
+            userMapper.insert(user);
+        } catch (DuplicateKeyException e) {
+            throw new BusinessException("用户名、手机号或邮箱已被注册，请修改后重试");
+        }
         return Result.OK();
     }
 

@@ -29,7 +29,7 @@
             <el-button class="btn" type="primary" size="large" :loading="submitting" @click="submitForm(ruleFormRef)">登录</el-button>
             </el-form>
             <div class="footer">
-                <p>还没有登陆？<router-link to="/auth/register">去注册</router-link></p>
+                <p>还没有登陆？<router-link :to="{ path: '/auth/register', query: typeof route.query.redirect === 'string' ? { redirect: route.query.redirect } : {} }">去注册</router-link></p>
             
             </div>
 

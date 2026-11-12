@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS `user` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_user_username` (`username`),
     UNIQUE KEY `uk_user_phone` (`phone`),
-    KEY `idx_user_email` (`email`),
+    UNIQUE KEY `uk_user_email` (`email`),
     KEY `idx_user_created_at` (`created_at`),
     KEY `idx_user_status_created` (`status`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
