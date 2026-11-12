@@ -79,20 +79,20 @@
                                     <span class="session-time">{{ session.createdAt}}</span>
                                 </div>
                                 <div class="session-preview">
-                                    {{ session.lastMessageContent }}
+                                    {{ session.lastMessageContent || '暂无消息' }}
                                 </div>
                                 <div class="session-status">
-                                    <span>
+                                    <span title="该会话的消息总数">
                                         <el-icon>
                                             <ChatRound />
                                         </el-icon>
-                                        {{ session.messageCount || 0}}
+                                        {{ session.messageCount ?? 0}} 条
                                     </span>
-                                    <span>
+                                    <span title="首末消息的时间跨度，不代表实际在线时长">
                                         <el-icon>
                                             <Clock />
                                         </el-icon>
-                                        {{ session.durationMinutes || 0 }}
+                                        {{ session.durationMinutes ?? 0 }} 分钟
                                     </span>
                                 </div>
                             </div>

@@ -10,6 +10,7 @@ import org.example.qispringboot.AiService.PromptManage;
 import org.example.qispringboot.DTO.command.AiChatCommandDTO;
 import org.example.qispringboot.DTO.command.ChatMessageCommandDTO;
 import org.example.qispringboot.DTO.response.ChatReplyResponseDTO;
+import org.example.qispringboot.DTO.response.ChatSessionSummaryResponseDTO;
 import org.example.qispringboot.common.ResultCode;
 import org.example.qispringboot.entity.ChatMessage;
 import org.example.qispringboot.entity.ChatSession;
@@ -193,13 +194,10 @@ public class ChatService {
      * @param pageSize 每页条数
      * @return 分页结果（records/total）
      */
-    public Page<ChatSession> pageSessions(long pageNum, long pageSize) {
+    public Page<ChatSessionSummaryResponseDTO> pageSessions(long pageNum, long pageSize) {
         Long userId = getCurrentLoginUser().getUserId();
-        return chatSessionMapper.selectPage(new Page<>(Math.max(1, pageNum), Math.max(1, Math.min(100, pageSize))),
-                new LambdaQueryWrapper<ChatSession>()
-                        .eq(ChatSession::getUserId, userId)
-                        .orderByDesc(ChatSession::getCreatedAt)
-                        .orderByDesc(ChatSession::getId));
+        return chatSessionMapper.selectOwnedSummaries(
+                new Page<>(Math.max(1, pageNum), Math.max(1, Math.min(100, pageSize))), userId);
     }
 
     /**

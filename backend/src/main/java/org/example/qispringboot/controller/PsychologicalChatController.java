@@ -7,6 +7,7 @@ import org.example.qispringboot.DTO.command.AiChatCommandDTO;
 import org.example.qispringboot.DTO.command.ChatMessageCommandDTO;
 import org.example.qispringboot.DTO.command.SessionStartDTO;
 import org.example.qispringboot.DTO.response.ChatReplyResponseDTO;
+import org.example.qispringboot.DTO.response.ChatSessionSummaryResponseDTO;
 import org.example.qispringboot.common.Result;
 import org.example.qispringboot.entity.ChatMessage;
 import org.example.qispringboot.entity.ChatSession;
@@ -86,7 +87,7 @@ public class PsychologicalChatController {
      * @return 分页数据（records/total）
      */
     @GetMapping("/sessions")
-    public Result<Page<ChatSession>> sessions(
+    public Result<Page<ChatSessionSummaryResponseDTO>> sessions(
             @RequestParam(value = "pageNum", required = false) Long pageNum,
             @RequestParam(value = "pageSize", required = false) Long pageSize,
             @RequestParam(value = "page", required = false) Long page,

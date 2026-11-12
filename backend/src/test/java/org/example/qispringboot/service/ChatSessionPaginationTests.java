@@ -36,9 +36,11 @@ class ChatSessionPaginationTests {
         try (var connection = source.getConnection(); var statement = connection.createStatement()) {
             statement.execute("DROP ALL OBJECTS");
             statement.execute("CREATE TABLE chat_session (id BIGINT PRIMARY KEY, user_id BIGINT, session_title VARCHAR(200), last_emotion_analysis TEXT, last_emotion_updated_at TIMESTAMP, created_at TIMESTAMP, updated_at TIMESTAMP)");
+            statement.execute("CREATE TABLE chat_message (id BIGINT PRIMARY KEY, session_id BIGINT, content TEXT, created_at TIMESTAMP)");
             for (int id = 1; id <= 23; id++)
                 statement.execute("INSERT INTO chat_session (id,user_id,session_title,created_at) VALUES (" + id + ",1,'我的会话','2026-11-12 10:00:00')");
             statement.execute("INSERT INTO chat_session (id,user_id,session_title,created_at) VALUES (99,2,'其他用户会话','2026-11-12 11:00:00')");
+            statement.execute("INSERT INTO chat_message VALUES (1,23,'第一条','2026-11-12 10:01:00'),(2,23,'第二条','2026-11-12 10:06:00'),(3,23,REPEAT('新',240),'2026-11-12 10:04:00'),(4,22,'单条消息','2026-11-12 10:02:00'),(5,99,'其他用户私密内容','2026-11-12 11:00:00')");
         }
         var config = new MybatisConfiguration();
         config.setEnvironment(new Environment("test",new JdbcTransactionFactory(),source));
@@ -88,6 +90,42 @@ class ChatSessionPaginationTests {
         assertEquals(0,service.pageSessions(1,10).getTotal());
         SecurityContextHolder.clearContext();
         assertThrows(BusinessException.class,() -> service.pageSessions(1,10));
+    }
+
+    @Test
+    void summariesContainRealCountsBoundedPreviewAndMessageTimeSpan() {
+        var records = service.pageSessions(1,10).getRecords();
+        var summary = records.get(0);
+        assertEquals(23L,summary.getId());
+        assertEquals(3L,summary.getMessageCount());
+        assertEquals("新".repeat(200),summary.getLastMessageContent());
+        assertEquals(4,summary.getLastMessageTime().getMinute());
+        assertEquals(5L,summary.getDurationMinutes());
+        var single = records.get(1);
+        assertEquals(1L,single.getMessageCount());
+        assertEquals("单条消息",single.getLastMessageContent());
+        assertEquals(0L,single.getDurationMinutes());
+        var empty = records.get(2);
+        assertEquals(0L,empty.getMessageCount());
+        assertNull(empty.getLastMessageContent());
+        assertNull(empty.getLastMessageTime());
+        assertEquals(0L,empty.getDurationMinutes());
+    }
+
+    @Test
+    void summaryRefreshReflectsNewMessagesAndNeverIncludesAnotherUsersContent() throws Exception {
+        try (var statement = sql.getConnection().createStatement()) {
+            statement.execute("INSERT INTO chat_message VALUES (6,23,'新回复','2026-11-12 10:08:00')");
+        }
+        var mine = service.pageSessions(1,10).getRecords().get(0);
+        assertEquals(4L,mine.getMessageCount());
+        assertEquals("新回复",mine.getLastMessageContent());
+        assertEquals(7L,mine.getDurationMinutes());
+        login(2L);
+        var other = service.pageSessions(1,10).getRecords().get(0);
+        assertEquals(99L,other.getId());
+        assertEquals(1L,other.getMessageCount());
+        assertEquals("其他用户私密内容",other.getLastMessageContent());
     }
 
     @Test
