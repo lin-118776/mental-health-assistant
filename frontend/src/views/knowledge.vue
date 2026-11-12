@@ -2,14 +2,17 @@
     <div>
        <PageHead title="知识文章">
         <template #buttons >
-            <el-button type="primary" @click="handleEdit({})">
+            <el-button type="primary" :disabled="busyId !== null" @click="handleEdit({})">
                 新增
             </el-button>
           
         </template>
         </PageHead>
         <TableSearch :formItem="formItem" @search="handleSearch" />
-        <el-table :data="tableData" style="width: 100%;margin-top: 25px;" >
+        <p v-if="categoryError">分类加载失败 <el-button text type="primary" @click="loadCategories">重试</el-button></p>
+        <el-alert v-if="listError" title="文章列表加载失败，请重试" type="error" :closable="false" />
+        <el-button v-if="listError" @click="loadArticles()">重试</el-button>
+        <el-table v-loading="listLoading" :data="tableData" empty-text="没有符合条件的文章" style="width: 100%;margin-top: 25px;" >
             <el-table-column label="文章标题" width="200px" fixed="left">
                 <template #default="scope">
                    <div style="display: flex; align-items: center;">
@@ -21,7 +24,7 @@
             <el-table-column label="分类" width="150px">
                 <template #default="scope">
                    <div style="display: flex; align-items: center;">
-                    <span>{{ categoryMap[scope.row.categoryId] }}</span>
+                    <span>{{ scope.row.categoryName || categoryMap[scope.row.categoryId] || '未分类' }}</span>
                    </div>
                 </template>
             </el-table-column>
@@ -31,16 +34,19 @@
             <el-table-column prop="publishedAt" width="150px" label="发布时间" />
              <el-table-column label="操作" width="240px" fixed="right">
                 <template #default="scope">
-                   <el-button text type="primary" @click="handleEdit(scope.row)">编辑</el-button>
-                   <el-button  @click="handlePublish(scope.row)" v-if="scope.row.status == '0' || scope.row.status == '2'"  text type="success" >发布</el-button>
-                   <el-button  @click="handleUnpublish(scope.row)" v-if="scope.row.status == '1'" text type="warning" >下线</el-button>
-                   <el-button  @click="handleDelete(scope.row)" v-if="scope.row.status == '0' || scope.row.status == '2'" text type="danger" >删除</el-button>
+                   <el-button text type="primary" :disabled="busyId !== null || listLoading" @click="handleEdit(scope.row)">编辑</el-button>
+                   <el-button :disabled="busyId !== null || listLoading" @click="handlePublish(scope.row)" v-if="scope.row.status == '0' || scope.row.status == '2'" text type="success">发布</el-button>
+                   <el-button :disabled="busyId !== null || listLoading" @click="handleUnpublish(scope.row)" v-if="scope.row.status == '1'" text type="warning">下线</el-button>
+                   <el-button :disabled="busyId !== null || listLoading" @click="handleDelete(scope.row)" v-if="scope.row.status == '0' || scope.row.status == '2'" text type="danger">删除</el-button>
                 </template>
             </el-table-column>
         </el-table>
         <el-pagination 
+            v-if="!listError"
             style="margin-top: 25px; align-items: center; justify-content: center;"
             :page-size="pagintion.pageSize"
+            :current-page="pagintion.currentPage"
+            :disabled="listLoading || busyId !== null"
             layout="prev, pager, next"
             :total="pagintion.total"
             @current-change="handleChange"
@@ -56,7 +62,7 @@ import ArticleDialog from '@/components/ArticleDialog.vue';
 import PageHead from '@/components/PageHead.vue';
 import TableSearch from '@/components/TableSearch.vue';
 import { categoryTree,articlePage } from '@/api/admin'
-import { onMounted,ref,reactive } from 'vue'
+import { onMounted,onBeforeUnmount,ref,reactive } from 'vue'
 import { Timer } from '@element-plus/icons-vue'
 import { getArticleDetail } from '@/api/admin'
 import { ElMessageBox,ElMessage } from 'element-plus';
@@ -71,16 +77,25 @@ const categories = ref([])
 
 //列表数据
 const tableData = ref([])
+const listLoading = ref(false)
+const listError = ref(false)
+const categoryError = ref(false)
+const busyId = ref(null)
+let appliedFilters = {}
+let listRequestId = 0
+let categoryRequestId = 0
+let disposed = false
 
 //新增和编辑
 const dialogVisible = ref(false)
 const currentArticle = ref(null)
-const handleSuccess = () => {
+const handleSuccess = async () => {
     dialogVisible.value = false
-    handleSearch({})
+    await loadArticles()
 }
 let editRequestId = 0
 const handleEdit = async (row) => {
+    if (busyId.value !== null || disposed) return
     const requestId = ++editRequestId
     dialogVisible.value = false
     currentArticle.value = null
@@ -90,74 +105,58 @@ const handleEdit = async (row) => {
     }
     try {
         const res = await getArticleDetail(row.id)
-        if (requestId !== editRequestId) return
+        if (disposed || requestId !== editRequestId) return
         currentArticle.value = res.data
         dialogVisible.value = true
     } catch {
         // 详情失败时不打开空白或上一篇文章的编辑表单。
     }
 }
-// 发布文章
-const handlePublish = (row) => {
-    ElMessageBox.confirm(`确认发布文章${row.title}吗？`, '确认', {
-        confirmButtonText: '确认发布',
-        cancelButtonText: '取消',
-        type: 'info'
-    }).then(() => {
-        changeArticleStatus(row.id,{
-            status:'1'
-        }).then(res=>{
-            ElMessage.success('发布成功')
-            handleSearch({})
+const runAction = async (row, action) => {
+    if (disposed || busyId.value !== null || listLoading.value) return
+    const status = String(row.status)
+    if (action === '下线' ? status !== '1' : !['0','2'].includes(status)) return
+    busyId.value = row.id
+    // 操作开始后，丢弃之前仍在加载的编辑详情。
+    editRequestId++
+    try {
+        await ElMessageBox.confirm('确认' + action + '文章“' + row.title + '”吗？', '确认', {
+            confirmButtonText:'确认' + action, cancelButtonText:'取消', type:action === '发布' ? 'info' : 'warning'
         })
-    })
-   
+        if (disposed) return
+        if (action === '删除') await deleteArticle(row.id)
+        else await changeArticleStatus(row.id,{status:action === '发布' ? '1' : '2'})
+        if (disposed) return
+        ElMessage.success(action + '成功')
+        await loadArticles()
+    } catch {
+        // 取消或请求失败时保留原列表，状态只由后端确认后的查询更新。
+    } finally {
+        if (!disposed) busyId.value = null
+    }
 }
-// 下线文章
-const handleUnpublish = (row) => {
-    ElMessageBox.confirm(`确认下线文章${row.title}吗？`, '确认', {
-        confirmButtonText: '确认下线',
-        cancelButtonText: '取消',
-        type: 'warning'
-    }).then(() => {
-        changeArticleStatus(row.id,{
-            status:'2'
-        }).then(res=>{
-            ElMessage.success('下线成功')
-            handleSearch({})
-        })
-    })
-   
-}
-// 删除文章
-const handleDelete = (row) => {
-        ElMessageBox.confirm(`确认删除文章${row.title}吗？`, '确认', {
-            confirmButtonText: '确认删除',
-            cancelButtonText: '取消',
-            type: 'danger'
-        }).then(() => {
-            deleteArticle(row.id).then(res=>{
-                ElMessage.success('删除成功')
-                handleSearch({})
-            })
-        })
-}
-onMounted( async () => {
-    const res = await categoryTree()
-    categories.value = res.data.map(item=>{
-        categoryMap[item.id] = item.categoryName
-        return {
-            label:item.categoryName,
-            value:item.id
-        }      
-    })
-    formItem[1].options = categories.value
+const handlePublish = row => runAction(row,'发布')
+const handleUnpublish = row => runAction(row,'下线')
+const handleDelete = row => runAction(row,'删除')
 
-    //获取列表
-    handleSearch({})
-})
+const loadCategories = async () => {
+    const requestId = ++categoryRequestId
+    categoryError.value = false
+    try {
+        const res = await categoryTree()
+        if (disposed || requestId !== categoryRequestId) return
+        categories.value = res.data.map(item => ({label:item.categoryName,value:item.id}))
+        for (const key of Object.keys(categoryMap)) delete categoryMap[key]
+        res.data.forEach(item => {categoryMap[item.id] = item.categoryName})
+        formItem[1].options = categories.value
+    } catch {
+        if (!disposed && requestId === categoryRequestId) categoryError.value = true
+    }
+}
+onMounted(() => { loadCategories(); loadArticles() })
+onBeforeUnmount(() => { disposed = true; listRequestId++; categoryRequestId++; editRequestId++ })
 
-const formItem = [
+const formItem = reactive([
     {
         comp:'input',
         label:'文章标题',
@@ -191,7 +190,7 @@ const formItem = [
             }
         ]
     }
-]
+])
 
 //分页参数
 const pagintion = reactive({
@@ -200,27 +199,43 @@ const pagintion = reactive({
     total:0
 })
 
-// 查询文章列表
-const handleSearch = async (formData) => {
-    console.log(formData,'查询参数');
-
-const params ={
-    ...pagintion,
-    ...formData
+const handleSearch = (formData = {}) => {
+    if (busyId.value !== null) return
+    appliedFilters = {}
+    if (formData.title?.trim()) appliedFilters.title = formData.title.trim()
+    if (formData.categoryId !== '' && formData.categoryId != null) appliedFilters.categoryId = formData.categoryId
+    if (formData.status !== '' && formData.status != null) appliedFilters.status = String(formData.status)
+    pagintion.currentPage = 1
+    return loadArticles()
 }
-
-    const res = await articlePage(params)
-    const {records,total} = res.data
-        
+const loadArticles = async () => {
+    if (disposed) return
+    const requestId = ++listRequestId
+    listLoading.value = true
+    listError.value = false
+    tableData.value = []
+    try {
+        const res = await articlePage({currentPage:pagintion.currentPage,pageSize:pagintion.pageSize,...appliedFilters})
+        if (disposed || requestId !== listRequestId) return
+        const {records,total} = res.data
+        const lastPage = Math.max(1, Math.ceil(total / pagintion.pageSize))
+        if (pagintion.currentPage > lastPage) {
+            pagintion.currentPage = lastPage
+            return await loadArticles()
+        }
         pagintion.total = total
         tableData.value = records
+    } catch {
+        if (!disposed && requestId === listRequestId) listError.value = true
+    } finally {
+        if (!disposed && requestId === listRequestId) listLoading.value = false
     }
-
-        // 分页改变时触发
-        const handleChange = (val) => {
-            pagintion.currentPage = val
-            handleSearch({})
-        }
+}
+const handleChange = val => {
+    if (val === pagintion.currentPage || busyId.value !== null) return
+    pagintion.currentPage = val
+    return loadArticles()
+}
 
 </script>
 
