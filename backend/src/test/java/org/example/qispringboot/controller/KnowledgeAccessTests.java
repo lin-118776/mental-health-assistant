@@ -70,6 +70,21 @@ class KnowledgeAccessTests {
     }
 
     @Test
+    void readerSearchPassesFiltersToPublishedOnlyQuery() throws Exception {
+        login("USER");
+        when(service.pagePublishedArticles(2L, 10L, "睡眠", 3L, "readCount", "desc"))
+                .thenReturn(new Page<>(2, 10));
+        mvc.perform(get("/api/knowledge/article/page").param("page", "2").param("size", "10")
+                .param("title", "睡眠").param("categoryId", "3")
+                .param("sortField", "readCount").param("sortDirection", "desc").param("status", "0"))
+                .andExpect(jsonPath("$.code").value("200"));
+        verify(service).pagePublishedArticles(2L, 10L, "睡眠", 3L, "readCount", "desc");
+        verify(service, never()).pageArticles(any(), any(), any(), any(), any(), any(), any());
+        mvc.perform(get("/api/knowledge/category/tree")).andExpect(jsonPath("$.code").value("200"));
+        verify(service).listCategories();
+    }
+
+    @Test
     void ordinaryUserCannotPreviewDraftsOrWriteArticles() throws Exception {
         login("USER");
         assertDenied(ResultCode.ACCESS_UNAUTHORIZED.getCode());

@@ -6,11 +6,35 @@
                 <h1>知识库</h1>
             </div>
         </div>
+        <el-form class="knowledge-filters" inline @submit.prevent="handleSearch">
+            <el-form-item label="文章标题">
+                <el-input v-model="filters.title" placeholder="输入标题关键词" maxlength="200" clearable />
+            </el-form-item>
+            <el-form-item label="分类">
+                <el-select v-model="filters.categoryId" placeholder="全部分类" clearable style="width: 180px;" :loading="categoriesLoading">
+                    <el-option v-for="category in categories" :key="category.id" :label="category.categoryName" :value="category.id" />
+                </el-select>
+                <el-button v-if="categoriesError" text type="primary" @click="loadCategories">重试加载分类</el-button>
+            </el-form-item>
+            <el-form-item label="排序">
+                <el-select v-model="filters.sortField" style="width: 150px;">
+                    <el-option label="最新发布" value="publishedAt" />
+                    <el-option label="最多阅读" value="readCount" />
+                </el-select>
+            </el-form-item>
+            <el-form-item>
+                <el-button type="primary" native-type="submit">搜索</el-button>
+                <el-button @click="resetSearch">重置</el-button>
+            </el-form-item>
+        </el-form>
         <div class="content">
             <!-- 左侧菜单 -->
             <div class="recommend-section">
                 <div class="section-title">推荐阅读</div>
                 <div class="recommend-list">
+                    <p v-if="recommendLoading">正在加载推荐…</p>
+                    <div v-else-if="recommendError">推荐加载失败 <el-button text type="primary" @click="loadRecommendations">重试</el-button></div>
+                    <p v-else-if="!recommendList.length">暂无推荐文章</p>
                     <div v-for="item in recommendList" :key="item.id" class="recommend-item" @click="goToArticle(item.id)">
                         <h4>{{ item.title }}</h4>
                         <p class="read-count">
@@ -22,6 +46,9 @@
             </div>
             <!-- 右侧内容 -->
             <div class="article-list">
+                <p v-if="loading">正在加载文章…</p>
+                <div v-else-if="loadError">文章加载失败 <el-button type="primary" text @click="getPageList">重试</el-button></div>
+                <el-empty v-else-if="!articleList.length" description="暂无符合条件的文章" />
                 <div v-for="item in articleList" :key="item.id" class="article-item" @click="goToArticle(item.id)">
                     <el-image :src="getImage(item.coverImage)" style="width: 240px; height: 150px;">
                         <template #error><img :src="iconUrl" alt="暂无封面" style="width: 100%; height: 100%; object-fit: contain;" /></template>
@@ -52,13 +79,15 @@
             </div>
         </div>
         <!-- 分页 -->
-        <div class="pagination-wrapper">
+        <div v-if="!loadError" class="pagination-wrapper">
             <el-pagination
                 style="margin-top: 25px;"
                 :page-size="pagination.size"
-                layout="prev, pager, next"
+                :current-page="pagination.currentPage"
+                :disabled="loading"
+                layout="prev, pager, next, total"
                 :total="pagination.total"
-                @change="handleChange"
+                @current-change="handleChange"
             />
         </div>
     </div>
@@ -66,8 +95,8 @@
  
 <script setup>
     import { dayjs } from 'element-plus'
-    import { ref , reactive , onMounted } from 'vue'
-    import { getKnowledgeList } from '@/api/frontend'
+    import { ref , reactive , onMounted, onBeforeUnmount } from 'vue'
+    import { getKnowledgeList, getKnowledgeCategories } from '@/api/frontend'
     import { useRouter } from 'vue-router'
     import { resolveFileUrl } from '@/config/index'
  
@@ -84,18 +113,86 @@
     })
  
     const articleList = ref([])
+    const filters = reactive({title:'', categoryId:undefined, sortField:'publishedAt'})
+    // 翻页和失败重试沿用最近一次提交的条件，不读取尚未提交的输入。
+    let appliedFilters = {sortField:'publishedAt'}
+    const categories = ref([])
+    const categoriesLoading = ref(false)
+    const categoriesError = ref(false)
+    const loading = ref(false)
+    const loadError = ref(false)
+    const recommendLoading = ref(false)
+    const recommendError = ref(false)
+    let pageRequestId = 0
+    let categoryRequestId = 0
+    let recommendRequestId = 0
+    let disposed = false
     //获取列表数据
-    const getPageList = () =>{
+    const getPageList = async () =>{
+        const requestId = ++pageRequestId
+        loading.value = true
+        loadError.value = false
+        articleList.value = []
         const params = {
-            sortField: 'publishedAt',
+            ...appliedFilters,
             sortDirection: 'desc',
             page: pagination.currentPage,
             size: pagination.size
         }
-        getKnowledgeList(params).then(res=>{
+        try {
+            const res = await getKnowledgeList(params)
+            if (disposed || requestId !== pageRequestId) return
             articleList.value = res.data.records
             pagination.total = res.data.total
-        })
+        } catch {
+            if (!disposed && requestId === pageRequestId) {
+                loadError.value = true
+            }
+        } finally {
+            if (!disposed && requestId === pageRequestId) loading.value = false
+        }
+    }
+
+    const handleSearch = () => {
+        appliedFilters = {sortField:filters.sortField === 'readCount' ? 'readCount' : 'publishedAt'}
+        const title = filters.title.trim()
+        if (title) appliedFilters.title = title
+        if (filters.categoryId !== undefined && filters.categoryId !== null && filters.categoryId !== '') appliedFilters.categoryId = filters.categoryId
+        pagination.currentPage = 1
+        return getPageList()
+    }
+
+    const resetSearch = () => {
+        Object.assign(filters, {title:'', categoryId:undefined, sortField:'publishedAt'})
+        return handleSearch()
+    }
+
+    const loadCategories = async () => {
+        const requestId = ++categoryRequestId
+        categoriesLoading.value = true
+        categoriesError.value = false
+        try {
+            const res = await getKnowledgeCategories()
+            if (!disposed && requestId === categoryRequestId) categories.value = res.data
+        } catch {
+            if (!disposed && requestId === categoryRequestId) categoriesError.value = true
+        } finally {
+            if (!disposed && requestId === categoryRequestId) categoriesLoading.value = false
+        }
+    }
+
+    const loadRecommendations = async () => {
+        const requestId = ++recommendRequestId
+        recommendLoading.value = true
+        recommendError.value = false
+        try {
+            const res = await getKnowledgeList({sortField:'readCount', sortDirection:'desc', page:1, size:5})
+            if (!disposed && requestId === recommendRequestId) recommendList.value = res.data.records
+        } catch {
+            if (!disposed && requestId === recommendRequestId) recommendError.value = true
+        } finally {
+            if (!disposed && requestId === recommendRequestId) recommendLoading.value = false
+        }
     }
  
     //获取封面图片
@@ -105,8 +202,9 @@
  
     // 分页改变时触发
     const handleChange = (page) =>{
+        if (page === pagination.currentPage) return
         pagination.currentPage = page
-        getPageList()
+        return getPageList()
     }
 
     //跳转到详情
@@ -115,25 +213,21 @@
     }
  
     onMounted(()=>{
-        //获取推荐阅读列表
-        const params = {
-            sortField: 'readCount',
-            sortDirection: 'desc',
-            currentPage: 1,
-            size: 5
-        }
-        //获取列表数据
         getPageList()
-        getKnowledgeList(params).then(res=>{
-            console.log(res)
-            recommendList.value = res.data.records
-        })
+        loadCategories()
+        loadRecommendations()
     })
+    onBeforeUnmount(() => { disposed = true })
  
 </script>
  
 <style scoped lang="scss">
 .knowledge-container {
+    .knowledge-filters {
+        max-width: 1200px;
+        margin: 20px auto 0;
+        padding: 0 20px;
+    }
     background: linear-gradient(135deg, #fafbfc 0%, #f7f9fc 50%, #f2f6fa 100%);
     .flex-box {
         display: flex;

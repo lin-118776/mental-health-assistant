@@ -46,6 +46,8 @@ export const getKnowledgeList = (params) =>{
     return request.get('/knowledge/article/page',{ params })
 }
 
+export const getKnowledgeCategories = () => request.get('/knowledge/category/tree')
+
 export const getKnowledgeDetail = (articleId) =>{
     return request.get(`/knowledge/article/${articleId}`)
 }

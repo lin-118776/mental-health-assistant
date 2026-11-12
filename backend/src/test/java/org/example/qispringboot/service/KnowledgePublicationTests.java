@@ -90,6 +90,22 @@ class KnowledgePublicationTests {
     }
 
     @Test
+    void titleAndCategoryFiltersCombineWithPublishedVisibilitySortAndPagination() {
+        for (int i = 1; i <= 4; i++) {
+            articles.insert(KnowledgeArticle.builder().id("sleep-" + i).title("睡眠改善" + i)
+                    .content("正文").categoryId(i == 4 ? 2L : 1L).authorId(10L)
+                    .readCount(i * 10).status(i == 3 ? 0 : 1).build());
+        }
+        var first = service.pagePublishedArticles(1L, 1L, "睡眠", 1L, "readCount", "desc");
+        assertEquals(2, first.getTotal());
+        assertEquals("sleep-2", first.getRecords().get(0).getId());
+        var next = service.pagePublishedArticles(2L, 1L, "睡眠", 1L, "readCount", "desc");
+        assertEquals("sleep-1", next.getRecords().get(0).getId());
+        assertEquals(0, service.pagePublishedArticles(1L, 10L, "无匹配关键词", 1L, "readCount", "desc").getTotal());
+        assertEquals(3, service.pagePublishedArticles(1L, 10L, "睡眠", null, "readCount", "desc").getTotal());
+    }
+
+    @Test
     void readingDraftOfflineOrMissingArticleIsRejectedWithoutIncreasingReads() {
         for (String id : java.util.List.of("article-0", "article-2", "missing"))
             assertThrows(BusinessException.class, () -> service.getPublishedArticleDetail(id));
