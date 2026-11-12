@@ -195,10 +195,11 @@ public class ChatService {
      */
     public Page<ChatSession> pageSessions(long pageNum, long pageSize) {
         Long userId = getCurrentLoginUser().getUserId();
-        return chatSessionMapper.selectPage(new Page<>(pageNum, pageSize),
+        return chatSessionMapper.selectPage(new Page<>(Math.max(1, pageNum), Math.max(1, Math.min(100, pageSize))),
                 new LambdaQueryWrapper<ChatSession>()
                         .eq(ChatSession::getUserId, userId)
-                        .orderByDesc(ChatSession::getCreatedAt));
+                        .orderByDesc(ChatSession::getCreatedAt)
+                        .orderByDesc(ChatSession::getId));
     }
 
     /**

@@ -68,12 +68,15 @@
              <div class="session-history">
                 <h4 class="history-title">会话列表</h4>
                 <div class="session-list">
-                    <div v-for="session in sessionsList" :key="session.id" @click="selectSessionClick(session)" class="session-item">
+                    <p v-if="sessionListLoading">正在加载会话列表…</p>
+                    <p v-else-if="sessionListError">会话列表加载失败 <el-button text type="primary" @click="getSessionsPage()">重试</el-button></p>
+                    <p v-else-if="!sessionsList.length">暂无历史会话，发送消息即可开始。</p>
+                    <div v-for="session in sessionsList" :key="session.id" @click="selectSessionClick(session)" class="session-item" :class="{active: currentSession?.sessionId === session.id}">
                         <div class="session-info">
                             <div class="session-title">
                                 <span>{{ session.sessionTitle }}</span>
                                 <div class="session-meta">
-                                    <span class="session-time">{{ session.startedAt}}</span>
+                                    <span class="session-time">{{ session.createdAt}}</span>
                                 </div>
                                 <div class="session-preview">
                                     {{ session.lastMessageContent }}
@@ -102,6 +105,11 @@
                             </div>
                         </div>
                     </div>
+                </div>
+                <div class="session-pagination" v-if="!sessionListError">
+                    <div>第 {{ sessionPage }} 页，共 {{ sessionTotal }} 条</div>
+                    <el-button size="small" :disabled="sessionListLoading || sessionPage <= 1" @click="getSessionsPage(sessionPage - 1)">上一页</el-button>
+                    <el-button size="small" :disabled="sessionListLoading || sessionPage * sessionPageSize >= sessionTotal" @click="getSessionsPage(sessionPage + 1)">下一页</el-button>
                 </div>
 
              </div>
@@ -237,6 +245,11 @@ const creatNewfrontendSession = () =>{
 const currentSession = ref(null)
 //定义会话列表
 const sessionsList = ref([])
+const sessionPage = ref(1)
+const sessionTotal = ref(0)
+const sessionPageSize = 10
+const sessionListLoading = ref(false)
+const sessionListError = ref(false)
 
 //定义对话消息
 const messages = ref([])
@@ -335,7 +348,7 @@ const sendMessage = async () => {
             const res = await startSession({title})
             if (requestId !== conversationId || disposed) return
             currentSession.value = {sessionId:res.data, status:'ACTIVE', sessionTitle:title}
-            getSessionsPage()
+            getSessionsPage(1)
         }
         messages.value.push({id:crypto.randomUUID(), senderType:1, content:message, createdAt:new Date().toLocaleString()})
         await startAIResponse(currentSession.value.sessionId, message, requestId)
@@ -401,13 +414,25 @@ const startAIResponse = async (sessionId, content, requestId) => {
     }
 }
 
-const getSessionsPage = async () => {
+const getSessionsPage = async (page = sessionPage.value) => {
+    if (disposed || !Number.isSafeInteger(page) || page < 1) return
     const requestId = ++listRequestId
+    sessionPage.value = page
+    sessionListLoading.value = true
+    sessionListError.value = false
+    sessionsList.value = []
     try {
-        const res = await getSessionsList({pageNum:1, pageSize:10})
-        if (!disposed && requestId === listRequestId) sessionsList.value = res.data.records
+        const res = await getSessionsList({pageNum:page, pageSize:sessionPageSize})
+        if (disposed || requestId !== listRequestId) return
+        sessionTotal.value = res.data.total
+        const lastPage = Math.max(1, Math.ceil(res.data.total / sessionPageSize))
+        // 删除或其他设备的变更可能使当前页越界。
+        if (page > lastPage) return await getSessionsPage(lastPage)
+        sessionsList.value = res.data.records
     } catch {
-        // 通用请求拦截器已提示错误，保留已有列表供重试。
+        if (!disposed && requestId === listRequestId) sessionListError.value = true
+    } finally {
+        if (!disposed && requestId === listRequestId) sessionListLoading.value = false
     }
 }
 
@@ -460,6 +485,12 @@ onMounted(() => {
 
 <style scoped lang="scss">
 .consultation-container {
+    .session-pagination {
+        margin-top: 12px;
+        line-height: 2;
+        color: #6b7280;
+        font-size: 12px;
+    }
     margin: 0 auto;
     width: 1200px;
     display: flex;

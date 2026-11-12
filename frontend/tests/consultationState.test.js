@@ -18,7 +18,7 @@ const setup = (overrides = {}) => {
         ref: value => ({value}), onMounted() {}, onBeforeUnmount: callback => {unmount = callback},
         URL, AbortController, crypto:{randomUUID:() => `message-${++id}`},
         localStorage:{getItem:() => 'token'}, ElMessage:{error:value => errors.push(value), success() {}},
-        getSessionsList:async () => ({data:{records:[]}}),
+        getSessionsList:async () => ({data:{records:[],total:0}}),
         getSessionDetail:async () => ({data:[]}), getSessionEmotion:async () => ({data:{available:false}}),
         startSession:async () => ({data:1}), deleteSession:async () => {},
         fetchEventSource: (url, options) => {
@@ -32,7 +32,7 @@ const setup = (overrides = {}) => {
         .split('<script setup>')[1].split('</script>')[0]
         .replace(/^import .*$/gm,'').replaceAll('import.meta.url', "'file:///component.vue'")
     vm.createContext(context)
-    vm.runInContext(`${source}\nglobalThis.view = {creatNewfrontendSession, selectSessionClick, sendMessage, handkeKeyDown, handleDeleteSession, currentSession, messages, userMessage, isAiTyping, historyLoading, historyError}`, context)
+    vm.runInContext(`${source}\nglobalThis.view = {creatNewfrontendSession, selectSessionClick, sendMessage, handkeKeyDown, handleDeleteSession, currentSession, messages, userMessage, isAiTyping, historyLoading, historyError, getSessionsPage, sessionPage, sessionTotal, sessionListLoading, sessionListError, sessionsList}`, context)
     context.view.creatNewfrontendSession()
     return {...context.view, streams, errors, unmount:() => unmount()}
 }
@@ -231,4 +231,107 @@ test('Shift+Enter and input method confirmation do not send; oversized input is 
     await view.sendMessage()
     assert.equal(view.streams.length, 0)
     assert.equal(view.userMessage.value.length, 501)
+})
+
+test('history pagination loads older sessions without replacing the currently open conversation', async () => {
+    const calls = []
+    const view = setup({getSessionsList:async params => {
+        calls.push({...params})
+        return {data:{records:[{id:params.pageNum === 1 ? 23 : 13}],total:23}}
+    }})
+    await view.selectSessionClick({id:23})
+    view.messages.value = [{id:'open',content:'当前对话'}]
+    await view.getSessionsPage(1)
+    await view.getSessionsPage(2)
+    assert.deepEqual(calls,[{pageNum:1,pageSize:10},{pageNum:2,pageSize:10}])
+    assert.equal(view.sessionsList.value[0].id,13)
+    assert.equal(view.sessionPage.value,2)
+    assert.equal(view.sessionTotal.value,23)
+    assert.equal(view.currentSession.value.sessionId,23)
+    assert.equal(view.messages.value[0].content,'当前对话')
+})
+
+test('history list failure clears stale rows and retries the same page', async () => {
+    let fail = true
+    const calls = []
+    const view = setup({getSessionsList:async params => {
+        calls.push(params.pageNum)
+        if(fail) throw Error('failed')
+        return {data:{records:[{id:12}],total:20}}
+    }})
+    view.sessionsList.value = [{id:99}]
+    await view.getSessionsPage(2)
+    assert.equal(view.sessionsList.value.length,0)
+    assert.equal(view.sessionListError.value,true)
+    assert.equal(view.sessionListLoading.value,false)
+    fail = false
+    await view.getSessionsPage()
+    assert.deepEqual(calls,[2,2])
+    assert.equal(view.sessionListError.value,false)
+    assert.equal(view.sessionsList.value[0].id,12)
+})
+
+test('deleting the last row returns to a valid page and empty history stays on page one', async () => {
+    let total = 11
+    const pages = []
+    const view = setup({deleteSession:async () => {total--}, getSessionsList:async params => {
+        pages.push(params.pageNum)
+        return {data:{records:params.pageNum === 1 ? [{id:10}] : [], total}}
+    }})
+    view.sessionPage.value = 2
+    await view.handleDeleteSession(11)
+    assert.deepEqual(pages,[2,1])
+    assert.equal(view.sessionPage.value,1)
+    assert.equal(view.sessionTotal.value,10)
+    total = 0
+    await view.getSessionsPage(2)
+    assert.equal(view.sessionPage.value,1)
+    assert.equal(view.sessionTotal.value,0)
+    assert.equal(view.sessionListLoading.value,false)
+})
+
+test('a new conversation returns history to page one', async () => {
+    const pages = []
+    const view = setup({getSessionsList:async params => {pages.push(params.pageNum); return {data:{records:[],total:20}}}})
+    view.sessionPage.value = 2
+    view.userMessage.value = '新问题'
+    const sending = view.sendMessage()
+    await tick()
+    assert.deepEqual(pages,[1])
+    assert.equal(view.sessionPage.value,1)
+    view.streams[0].options.onmessage({event:'done',data:''})
+    await sending
+})
+
+test('late history pages and failures cannot overwrite newer results or loading state', async () => {
+    const pending = []
+    const view = setup({getSessionsList:() => {const job=deferred(); pending.push(job); return job.promise}})
+    const old = view.getSessionsPage(1)
+    const newer = view.getSessionsPage(2)
+    pending[0].reject(Error('old failure'))
+    await old
+    assert.equal(view.sessionListLoading.value,true)
+    assert.equal(view.sessionListError.value,false)
+    pending[1].resolve({data:{records:[{id:12}],total:20}})
+    await newer
+    assert.equal(view.sessionsList.value[0].id,12)
+    const first = view.getSessionsPage(1), second = view.getSessionsPage(2)
+    pending[3].resolve({data:{records:[{id:11}],total:20}})
+    await second
+    pending[2].resolve({data:{records:[{id:22}],total:30}})
+    await first
+    assert.equal(view.sessionPage.value,2)
+    assert.equal(view.sessionTotal.value,20)
+    assert.equal(view.sessionsList.value[0].id,11)
+})
+
+test('unmounted history list ignores pending results', async () => {
+    const pending = deferred()
+    const view = setup({getSessionsList:() => pending.promise})
+    const loading = view.getSessionsPage(1)
+    view.unmount()
+    pending.resolve({data:{records:[{id:'late'}],total:1}})
+    await loading
+    assert.equal(view.sessionsList.value.length,0)
+    assert.equal(view.sessionTotal.value,0)
 })
