@@ -61,6 +61,31 @@ class EmotionDiaryOwnerTests {
     }
 
     @Test
+    void adminDetailReadsCurrentRecordAndOnlyItsOwnerDisplayName() {
+        when(mapper.selectById(11L)).thenReturn(EmotionDiary.builder().id(11L).userId(7L)
+                .diaryContent("最新日志内容").aiEmotionAnalysis("{\"primaryEmotion\":\"平静\"}").build());
+        when(users.selectById(7L)).thenReturn(org.example.qispringboot.entity.User.builder()
+                .id(7L).username("owner").nickname("昵称").build());
+        var detail = service.adminDetail(11L);
+        assertEquals("最新日志内容", detail.getDiaryContent());
+        assertEquals("昵称", detail.getNickname());
+        assertEquals(7L, detail.getUserId());
+        assertNotNull(detail.getAiEmotionAnalysis());
+        verify(users).selectById(7L);
+        verify(users, never()).selectList(any());
+    }
+
+    @Test
+    void adminDetailHandlesDeletedDiaryAndMissingOwnerWithoutInventingAnalysis() {
+        assertThrows(BusinessException.class, () -> service.adminDetail(99L));
+        verifyNoInteractions(users);
+        when(mapper.selectById(11L)).thenReturn(EmotionDiary.builder().id(11L).userId(7L).build());
+        var detail = service.adminDetail(11L);
+        assertEquals("用户 #7", detail.getNickname());
+        assertNull(detail.getAiEmotionAnalysis());
+    }
+
+    @Test
     void boundsPagination() {
         service.myPage(7L, -2, 10000);
         var page = ArgumentCaptor.forClass(Page.class);

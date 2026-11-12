@@ -85,6 +85,13 @@ public class EmotionDiaryService {
         diaryMapper.deleteById(id);
     }
 
+    public EmotionDiaryResponseDTO adminDetail(Long id) {
+        EmotionDiary diary = diaryMapper.selectById(id);
+        if (diary == null) throw new BusinessException("日志不存在或已删除");
+        User user = userMapper.selectById(diary.getUserId());
+        return toResponse(diary, user == null ? "用户 #" + diary.getUserId() : user.getDisplayName());
+    }
+
     public Page<EmotionDiaryResponseDTO> myPage(Long userId, long current, long size) {
         Page<EmotionDiary> page = new Page<>(Math.max(1, current), Math.max(1, Math.min(100, size)));
         diaryMapper.selectPage(page, new LambdaQueryWrapper<EmotionDiary>()

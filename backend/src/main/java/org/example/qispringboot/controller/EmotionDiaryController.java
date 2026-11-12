@@ -86,6 +86,12 @@ public class EmotionDiaryController {
         return Result.OK(emotionDiaryService.adminPage(current, pageSizeValue, userId, moodScreRange));
     }
 
+    @GetMapping("/admin/{id}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public Result<EmotionDiaryResponseDTO> adminDetail(@PathVariable Long id) {
+        return Result.OK(emotionDiaryService.adminDetail(id));
+    }
+
     @DeleteMapping("/admin/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public Result<Void> delete(@PathVariable Long id) {

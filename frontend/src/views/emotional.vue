@@ -41,12 +41,14 @@
             v-model:current-page="pagination.currentPage" v-model:page-size="pagination.size"
             layout="prev, pager, next, total" :total="pagination.total" @current-change="handlePageChange" />
 
-        <el-dialog title="情绪日志详情" v-model="detailDialogVisable" :close-on-click-modal="false" width="800px">
+        <el-dialog title="情绪日志详情" v-model="detailDialogVisable" :close-on-click-modal="false" width="800px" @close="closeDetail">
+            <p v-if="detailLoading">正在加载最新日志…</p>
+            <div v-else-if="detailError">日志加载失败，可能已被删除或无权访问。<el-button text type="primary" @click="viewSessionDetail({ id: detailId })">重试</el-button></div>
             <div class="detail-content" v-if="currentDetail">
                 <div class="detail-section">
                     <h4>用户信息</h4>
                     <el-descriptions :column="2" border>
-                        <el-descriptions-item label="用户名">{{ currentDetail.username }}</el-descriptions-item>
+                        <el-descriptions-item label="日志ID">{{ currentDetail.id }}</el-descriptions-item>
                         <el-descriptions-item label="昵称">{{ currentDetail.nickname }}</el-descriptions-item>
                         <el-descriptions-item label="用户ID">{{ currentDetail.userId }}</el-descriptions-item>
                         <el-descriptions-item label="记录日期">{{ currentDetail.diaryDate }}</el-descriptions-item>
@@ -83,13 +85,14 @@
 
                 <div class="detail-section">
                     <h4>AI情绪分析结果</h4>
-                    <div class="ai-analysis-result">
+                    <p v-if="!aiData">{{ analysisNotice }}</p>
+                    <div class="ai-analysis-result" v-else>
                         <el-descriptions :column="2" border>
                             <el-descriptions-item label="主要情绪">
                                 <el-tag :type="getAiEmotionTagType(aiData.primaryEmotion)">{{ aiData.primaryEmotion
                                     }}</el-tag>
                             </el-descriptions-item>
-                            <el-descriptions-item label="情绪强度">
+                            <el-descriptions-item label="情绪积极程度（越高越积极）">
                                 <el-progress :percentage="aiData.emotionScore"
                                     :color="getEmotionScoreColor(aiData.emotionScore)" :stroke-width="8"></el-progress>
                             </el-descriptions-item>
@@ -99,14 +102,13 @@
                                     }}</el-tag>
                             </el-descriptions-item>
                             <el-descriptions-item label="情绪性质">
-                                <el-tag :type="aiData.isNegative ? 'danger' : 'success'">{{ aiData.isNegative ? '负面情绪' :
-                                    '正面情绪'
+                                <el-tag :type="aiData.isNegative === true ? 'danger' : aiData.isNegative === false ? 'success' : 'info'">{{ aiData.isNegative === true ? '负面情绪' : aiData.isNegative === false ? '正面情绪' : '暂无分析'
                                     }}</el-tag>
                             </el-descriptions-item>
                         </el-descriptions>
 
                         <div class="ai-suggestion--section">
-                            <h5>专业建议</h5>
+                            <h5>AI建议（仅供参考）</h5>
                             <div class="suggestion-section">{{ aiData.suggestion || '无' }}</div>
                         </div>
                         <div class="ai-riskn--section">
@@ -136,7 +138,7 @@
                 </div>
             </div>
             <template #footer>
-                <el-button type="primary" @click="detailDialogVisable = false">关闭</el-button>
+                <el-button type="primary" @click="closeDetail">关闭</el-button>
             </template>
         </el-dialog>
     </div>
@@ -145,8 +147,8 @@
 <script setup>
 import PageHead from '@/components/PageHead.vue'
 import TableSearch from '@/components/TableSearch.vue'
-import { getEmotionalDiary } from '@/api/admin'
-import { ref, onMounted } from 'vue'
+import { getEmotionalDiary, getEmotionalDiaryDetail } from '@/api/admin'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { deleteEmotional } from '@/api/admin'
 import { ElMessage } from 'element-plus'
@@ -182,10 +184,9 @@ const getAiEmotionTagType = (emotion) => {
 }
 
 const getEmotionScoreColor = (score) => {
-    if (score >= 80) return '#f56c6c'
-    if (score >= 60) return '#e6a23c'
-    if (score >= 40) return '#909399'
-    return '#67c23a'
+    if (score >= 60) return '#67c23a'
+    if (score >= 40) return '#e6a23c'
+    return '#f56c6c'
 }
 
 const getRiskLevelTagType = (riskLevel) => {
@@ -258,21 +259,62 @@ const handlePageChange = (val) => {
 const detailDialogVisable = ref(false)
 const currentDetail = ref(null)
 const aiData = ref(null)
-const viewSessionDetail = (row) => {
-    console.log('当前行数据：', row)
-    currentDetail.value = row
-    if (row.aiEmotionAnalysis) {
-        try {
-            aiData.value = JSON.parse(row.aiEmotionAnalysis)
-        } catch (e) {
-            console.error('解析AI分析数据失败:', e)
-            aiData.value = {}
-        }
-    } else {
-        aiData.value = {}
-    }
-    detailDialogVisable.value = true
+const analysisNotice = ref('尚无AI分析结果')
+const detailLoading = ref(false)
+const detailError = ref(false)
+const detailId = ref(null)
+let detailRequestId = 0
+let disposed = false
+
+const closeDetail = () => {
+    detailRequestId++
+    detailDialogVisable.value = false
+    currentDetail.value = null
+    aiData.value = null
+    detailLoading.value = false
 }
+
+const parseAnalysis = raw => {
+    aiData.value = null
+    analysisNotice.value = '尚无AI分析结果'
+    if (!raw) return
+    try {
+        const value = JSON.parse(raw)
+        if (!value || Array.isArray(value) || typeof value !== 'object'
+            || typeof value.primaryEmotion !== 'string' || !value.primaryEmotion.trim()
+            || !Number.isFinite(value.emotionScore) || value.emotionScore < 0 || value.emotionScore > 100
+            || !Number.isInteger(value.riskLevel) || value.riskLevel < 0 || value.riskLevel > 3
+            || typeof value.isNegative !== 'boolean') throw new Error('invalid analysis')
+        aiData.value = {...value, suggestion:typeof value.suggestion === 'string' ? value.suggestion : '',
+            riskDescription:typeof value.riskDescription === 'string' ? value.riskDescription : '',
+            improvementSuggestions:Array.isArray(value.improvementSuggestions)
+                ? value.improvementSuggestions.filter(item => typeof item === 'string') : []}
+    } catch {
+        analysisNotice.value = '已有分析数据无法读取'
+    }
+}
+
+const viewSessionDetail = async row => {
+    const requestId = ++detailRequestId
+    detailId.value = row.id
+    currentDetail.value = null
+    aiData.value = null
+    detailError.value = false
+    detailLoading.value = true
+    detailDialogVisable.value = true
+    try {
+        const res = await getEmotionalDiaryDetail(row.id)
+        if (disposed || requestId !== detailRequestId) return
+        currentDetail.value = res.data
+        parseAnalysis(res.data.aiEmotionAnalysis)
+    } catch {
+        if (!disposed && requestId === detailRequestId) detailError.value = true
+    } finally {
+        if (!disposed && requestId === detailRequestId) detailLoading.value = false
+    }
+}
+
+onBeforeUnmount(() => { disposed = true; closeDetail() })
 
 //删除
 const handleDelete =  (row) => {
@@ -282,6 +324,7 @@ const handleDelete =  (row) => {
         type: 'warning'
     }).then( () => {
        deleteEmotional(row.id).then(() => {
+        if (detailId.value === row.id) closeDetail()
         ElMessage.success('删除成功')
         handleSearch()
        })
