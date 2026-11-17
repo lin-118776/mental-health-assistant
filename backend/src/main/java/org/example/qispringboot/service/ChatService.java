@@ -29,6 +29,7 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.SignalType;
@@ -219,13 +220,16 @@ public class ChatService {
      *
      * @param sessionId 会话ID
      */
+    @Transactional(rollbackFor = Exception.class)
     public void deleteSession(Long sessionId) {
         Long userId = getCurrentLoginUser().getUserId();
         getOwnedSession(userId, sessionId);
         // 先删除会话下的消息，再删除会话
         chatMessageMapper.delete(new LambdaQueryWrapper<ChatMessage>()
                 .eq(ChatMessage::getSessionId, sessionId));
-        chatSessionMapper.deleteById(sessionId);
+        int changed = chatSessionMapper.delete(new LambdaQueryWrapper<ChatSession>()
+                .eq(ChatSession::getId, sessionId).eq(ChatSession::getUserId, userId));
+        if (changed != 1) throw new BusinessException("会话不存在或已删除，请刷新后重试");
     }
 
     /**

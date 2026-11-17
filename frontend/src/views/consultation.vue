@@ -97,7 +97,7 @@
                                 </div>
                             </div>
                             <div class="session-actions">
-                                <el-button text type="danger" size="small" @click.stop="handleDeleteSession(session.id)">
+                                <el-button text type="danger" size="small" title="删除会话" :loading="deletingSessionId === session.id" :disabled="deletingSessionId !== null || (isAiTyping && currentSession?.sessionId === session.id)" @click.stop="handleDeleteSession(session.id)">
                                     <el-icon>
                                         <DeleteFilled />
                                     </el-icon>
@@ -181,7 +181,7 @@
                     placeholder="请输入你想分享的内容.."
                     type="textarea"
                     :rows="3"
-                    :disabled="isAiTyping || historyLoading || historyError"
+                    :disabled="isAiTyping || historyLoading || historyError || deletingSessionId === currentSession?.sessionId"
                     @keydown.enter="handkeKeyDown"
                     clearable
                     class="message-input"
@@ -191,7 +191,7 @@
                         <span>{{ userMessage.length }}/500</span>
                     </div>
                 </div>
-                <el-button :disabled="!userMessage.trim()||userMessage.length>500||isAiTyping||historyLoading||historyError" class="send-btn" @click="sendMessage">
+                <el-button :disabled="!userMessage.trim()||userMessage.length>500||isAiTyping||historyLoading||historyError||deletingSessionId === currentSession?.sessionId" class="send-btn" @click="sendMessage">
                     <el-icon><promotion /></el-icon>
                 </el-button>
                 
@@ -207,7 +207,7 @@
 
 import { startSession ,getSessionsList,deleteSession,getSessionDetail,getSessionEmotion} from '@/api/frontend'
 import { Promotion } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { ref ,onMounted,onBeforeUnmount} from 'vue'
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue'
 import { fetchEventSource } from '@microsoft/fetch-event-source'
@@ -250,6 +250,7 @@ const sessionTotal = ref(0)
 const sessionPageSize = 10
 const sessionListLoading = ref(false)
 const sessionListError = ref(false)
+const deletingSessionId = ref(null)
 
 //定义对话消息
 const messages = ref([])
@@ -335,6 +336,7 @@ const handkeKeyDown = e => {
 
 const sendMessage = async () => {
     if (isAiTyping.value || historyLoading.value || historyError.value || disposed) return
+    if (deletingSessionId.value !== null && deletingSessionId.value === currentSession.value?.sessionId) return
     const message = userMessage.value.trim()
     if (!message || userMessage.value.length > 500) return
     if (!currentSession.value) creatNewfrontendSession()
@@ -453,7 +455,22 @@ const selectSessionClick = async session => {
 }
 
 const handleDeleteSession = async id => {
+    if (disposed || deletingSessionId.value !== null) return
+    if (isAiTyping.value && currentSession.value?.sessionId === id) {
+        ElMessage.warning('请等待当前回复结束后再删除会话')
+        return
+    }
+    deletingSessionId.value = id
     try {
+        await ElMessageBox.confirm('删除后将同时移除该会话的全部消息，确定继续吗？', '删除会话', {
+            confirmButtonText:'确定删除', cancelButtonText:'取消', type:'warning'
+        })
+        if (disposed) return
+        // 确认期间可能切换或继续会话，删除前再次检查。
+        if (isAiTyping.value && currentSession.value?.sessionId === id) {
+            ElMessage.warning('请等待当前回复结束后再删除会话')
+            return
+        }
         await deleteSession(id)
         if (disposed) return
         if (currentSession.value?.sessionId === id) creatNewfrontendSession()
@@ -461,6 +478,8 @@ const handleDeleteSession = async id => {
         await getSessionsPage()
     } catch {
         // 删除失败时保留当前会话和消息。
+    } finally {
+        if (!disposed) deletingSessionId.value = null
     }
 }
 

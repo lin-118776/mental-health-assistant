@@ -17,7 +17,8 @@ const setup = (overrides = {}) => {
     const context = {
         ref: value => ({value}), onMounted() {}, onBeforeUnmount: callback => {unmount = callback},
         URL, AbortController, crypto:{randomUUID:() => `message-${++id}`},
-        localStorage:{getItem:() => 'token'}, ElMessage:{error:value => errors.push(value), success() {}},
+        localStorage:{getItem:() => 'token'}, ElMessage:{error:value => errors.push(value), success() {}, warning() {}},
+        ElMessageBox:{confirm:async()=>{}},
         getSessionsList:async () => ({data:{records:[],total:0}}),
         getSessionDetail:async () => ({data:[]}), getSessionEmotion:async () => ({data:{available:false}}),
         startSession:async () => ({data:1}), deleteSession:async () => {},
@@ -32,7 +33,7 @@ const setup = (overrides = {}) => {
         .split('<script setup>')[1].split('</script>')[0]
         .replace(/^import .*$/gm,'').replaceAll('import.meta.url', "'file:///component.vue'")
     vm.createContext(context)
-    vm.runInContext(`${source}\nglobalThis.view = {creatNewfrontendSession, selectSessionClick, sendMessage, handkeKeyDown, handleDeleteSession, currentSession, messages, userMessage, isAiTyping, historyLoading, historyError, getSessionsPage, sessionPage, sessionTotal, sessionListLoading, sessionListError, sessionsList}`, context)
+    vm.runInContext(`${source}\nglobalThis.view = {creatNewfrontendSession, selectSessionClick, sendMessage, handkeKeyDown, handleDeleteSession, currentSession, messages, userMessage, isAiTyping, historyLoading, historyError, getSessionsPage, sessionPage, sessionTotal, sessionListLoading, sessionListError, sessionsList, deletingSessionId}`, context)
     context.view.creatNewfrontendSession()
     return {...context.view, streams, errors, unmount:() => unmount()}
 }
@@ -334,4 +335,58 @@ test('unmounted history list ignores pending results', async () => {
     await loading
     assert.equal(view.sessionsList.value.length,0)
     assert.equal(view.sessionTotal.value,0)
+})
+
+test('cancelled deletion preserves the current conversation and never calls the delete API',async()=>{
+    let calls=0
+    const view=setup({ElMessageBox:{confirm:async()=>{throw Error('cancel')}},deleteSession:async()=>{calls++}})
+    await view.selectSessionClick({id:1})
+    view.messages.value=[{id:1,content:'保留记录'}]
+    await view.handleDeleteSession(1)
+    assert.equal(calls,0)
+    assert.equal(view.currentSession.value.sessionId,1)
+    assert.equal(view.messages.value[0].content,'保留记录')
+    assert.equal(view.deletingSessionId.value,null)
+})
+
+test('deletion is locked while confirmation is pending and blocked for the generating conversation',async()=>{
+    const confirm=deferred()
+    let calls=0
+    const view=setup({ElMessageBox:{confirm:()=>confirm.promise},deleteSession:async()=>{calls++}})
+    await view.selectSessionClick({id:1})
+    const deleting=view.handleDeleteSession(1)
+    await view.handleDeleteSession(1)
+    assert.equal(view.deletingSessionId.value,1)
+    // 回复在确认弹窗出现后开始，确认也不能删除正在生成回复的会话。
+    view.isAiTyping.value=true
+    confirm.resolve()
+    await deleting
+    assert.equal(calls,0)
+    assert.equal(view.deletingSessionId.value,null)
+    await view.handleDeleteSession(1)
+    assert.equal(calls,0)
+})
+
+test('leaving the page during deletion confirmation prevents the delete API call',async()=>{
+    const confirm=deferred()
+    const view=setup({ElMessageBox:{confirm:()=>confirm.promise},deleteSession:async()=>assert.fail('must not delete')})
+    const deleting=view.handleDeleteSession(1)
+    view.unmount()
+    confirm.resolve()
+    await deleting
+})
+
+test('a conversation being deleted cannot send another message',async()=>{
+    const pending=deferred()
+    const view=setup({deleteSession:()=>pending.promise})
+    await view.selectSessionClick({id:1})
+    const deleting=view.handleDeleteSession(1)
+    await tick()
+    view.userMessage.value='不应发送'
+    await view.sendMessage()
+    assert.equal(view.streams.length,0)
+    assert.equal(view.userMessage.value,'不应发送')
+    pending.reject(Error('failed'))
+    await deleting
+    assert.equal(view.deletingSessionId.value,null)
 })
