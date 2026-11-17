@@ -6,6 +6,7 @@ import jakarta.validation.Valid;
 import org.example.qispringboot.DTO.command.AiChatCommandDTO;
 import org.example.qispringboot.DTO.command.ChatMessageCommandDTO;
 import org.example.qispringboot.DTO.command.SessionStartDTO;
+import org.example.qispringboot.DTO.command.SessionRenameDTO;
 import org.example.qispringboot.DTO.response.ChatReplyResponseDTO;
 import org.example.qispringboot.DTO.response.ChatSessionSummaryResponseDTO;
 import org.example.qispringboot.common.Result;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -114,6 +116,12 @@ public class PsychologicalChatController {
      * @param sessionId 会话ID
      * @return 统一响应
      */
+    @PutMapping("/sessions/{sessionId}/title")
+    public Result<Void> renameSession(@PathVariable Long sessionId, @Valid @RequestBody SessionRenameDTO dto) {
+        chatService.renameSession(sessionId, dto.getTitle());
+        return Result.OK();
+    }
+
     @DeleteMapping("/sessions/{sessionId}")
     public Result<Void> deleteSession(@PathVariable Long sessionId) {
         chatService.deleteSession(sessionId);

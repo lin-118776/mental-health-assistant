@@ -1,6 +1,7 @@
 package org.example.qispringboot.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -216,10 +217,22 @@ public class ChatService {
     }
 
     /**
-     * 删除会话及其消息（校验归属）
+     * 修改当前用户的会话标题，更新条件同时包含会话ID和用户ID。
      *
      * @param sessionId 会话ID
      */
+    public void renameSession(Long sessionId, String title) {
+        Long userId = getCurrentLoginUser().getUserId();
+        if (title == null || title.length() > 200 || title.strip().isBlank())
+            throw new BusinessException("会话标题须为1到200个字符");
+        int changed = chatSessionMapper.update(null, new LambdaUpdateWrapper<ChatSession>()
+                .eq(ChatSession::getId, sessionId).eq(ChatSession::getUserId, userId)
+                .set(ChatSession::getSessionTitle, title.strip())
+                .set(ChatSession::getUpdatedAt, LocalDateTime.now()));
+        if (changed != 1) throw new BusinessException("会话不存在或无权修改");
+    }
+
+    /** 删除会话及其消息，任一步失败时整体回滚。 */
     @Transactional(rollbackFor = Exception.class)
     public void deleteSession(Long sessionId) {
         Long userId = getCurrentLoginUser().getUserId();

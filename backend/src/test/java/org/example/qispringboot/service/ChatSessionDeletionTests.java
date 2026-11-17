@@ -79,6 +79,29 @@ class ChatSessionDeletionTests {
     void close() {SecurityContextHolder.clearContext();context.close();}
 
     @Test
+    void renameChangesOnlyOwnedTitleAndTimestampWithoutTouchingMessages() {
+        service.renameSession(10L,"  考试压力记录  ");
+        assertEquals("考试压力记录",jdbc.queryForObject("SELECT session_title FROM chat_session WHERE id=10",String.class));
+        assertNotNull(jdbc.queryForObject("SELECT updated_at FROM chat_session WHERE id=10",java.sql.Timestamp.class));
+        assertEquals(1L,jdbc.queryForObject("SELECT user_id FROM chat_session WHERE id=10",Long.class));
+        assertEquals(2,count("chat_message","session_id",10));
+        assertNull(jdbc.queryForObject("SELECT session_title FROM chat_session WHERE id=20",String.class));
+        service.renameSession(10L,"标".repeat(200));
+        assertEquals(200,jdbc.queryForObject("SELECT session_title FROM chat_session WHERE id=10",String.class).length());
+    }
+    @Test
+    void invalidForeignMissingAndAnonymousRenamesLeaveRecordsUntouched() {
+        for (String title : List.of("", "   ", "\n\t", "标".repeat(201)))
+            assertThrows(BusinessException.class,()->service.renameSession(10L,title));
+        assertThrows(BusinessException.class,()->service.renameSession(10L,null));
+        assertThrows(BusinessException.class,()->service.renameSession(20L,"不能修改"));
+        assertThrows(BusinessException.class,()->service.renameSession(999L,"已删除会话"));
+        SecurityContextHolder.clearContext();
+        assertThrows(BusinessException.class,()->service.renameSession(10L,"未登录"));
+        assertNull(jdbc.queryForObject("SELECT session_title FROM chat_session WHERE id=10",String.class));
+        assertNull(jdbc.queryForObject("SELECT session_title FROM chat_session WHERE id=20",String.class));
+    }
+    @Test
     void successfulDeletionRemovesOnlyOwnedSessionAndItsMessages() {
         service.deleteSession(10L);
         assertEquals(0,count("chat_session","id",10));

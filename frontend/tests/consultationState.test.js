@@ -33,7 +33,7 @@ const setup = (overrides = {}) => {
         .split('<script setup>')[1].split('</script>')[0]
         .replace(/^import .*$/gm,'').replaceAll('import.meta.url', "'file:///component.vue'")
     vm.createContext(context)
-    vm.runInContext(`${source}\nglobalThis.view = {creatNewfrontendSession, selectSessionClick, sendMessage, handkeKeyDown, handleDeleteSession, currentSession, messages, userMessage, isAiTyping, historyLoading, historyError, getSessionsPage, sessionPage, sessionTotal, sessionListLoading, sessionListError, sessionsList, deletingSessionId}`, context)
+    vm.runInContext(`${source}\nglobalThis.view = {creatNewfrontendSession, selectSessionClick, sendMessage, handkeKeyDown, handleDeleteSession, handleRenameSession, currentSession, messages, userMessage, isAiTyping, historyLoading, historyError, getSessionsPage, sessionPage, sessionTotal, sessionListLoading, sessionListError, sessionsList, deletingSessionId, renamingSessionId}`, context)
     context.view.creatNewfrontendSession()
     return {...context.view, streams, errors, unmount:() => unmount()}
 }
@@ -389,4 +389,56 @@ test('a conversation being deleted cannot send another message',async()=>{
     pending.reject(Error('failed'))
     await deleting
     assert.equal(view.deletingSessionId.value,null)
+})
+
+test('rename trims the title, updates the current session and refreshes the existing history page',async()=>{
+    const writes=[],pages=[]
+    const view=setup({ElMessageBox:{prompt:async()=>({value:'  考试压力  '})},
+        renameSession:async(id,title)=>writes.push({id,title}),
+        getSessionsList:async params=>{pages.push(params.pageNum);return {data:{records:[{id:1,sessionTitle:'考试压力'}],total:20}}}})
+    await view.selectSessionClick({id:1,sessionTitle:'旧标题'})
+    view.sessionPage.value=2
+    await view.handleRenameSession({id:1,sessionTitle:'旧标题'})
+    assert.deepEqual(writes,[{id:1,title:'考试压力'}])
+    assert.equal(view.currentSession.value.sessionTitle,'考试压力')
+    assert.deepEqual(pages,[2])
+    assert.equal(view.renamingSessionId.value,null)
+})
+
+test('cancelled, blank, oversized and unchanged rename never writes',async()=>{
+    for(const value of ['','  ','x'.repeat(201),'旧标题']) {
+        const view=setup({ElMessageBox:{prompt:async()=>({value})},renameSession:async()=>assert.fail('invalid write')})
+        await view.handleRenameSession({id:1,sessionTitle:'旧标题'})
+        assert.equal(view.renamingSessionId.value,null)
+    }
+    const view=setup({ElMessageBox:{prompt:async()=>{throw Error('cancel')}},renameSession:async()=>assert.fail('cancelled write')})
+    await view.handleRenameSession({id:1,sessionTitle:'旧标题'})
+    assert.equal(view.renamingSessionId.value,null)
+})
+
+test('pending rename blocks duplicate rename and deletion; switching session does not receive the old title',async()=>{
+    const prompt=deferred(),writes=[]
+    const view=setup({ElMessageBox:{prompt:()=>prompt.promise},renameSession:async(id,title)=>writes.push({id,title}),deleteSession:async()=>assert.fail('blocked delete')})
+    const renaming=view.handleRenameSession({id:1,sessionTitle:'旧标题'})
+    await view.handleRenameSession({id:1,sessionTitle:'旧标题'})
+    await view.handleDeleteSession(1)
+    await view.selectSessionClick({id:2,sessionTitle:'另一个会话'})
+    prompt.resolve({value:'新标题'})
+    await renaming
+    assert.equal(writes.length,1)
+    assert.equal(view.currentSession.value.sessionTitle,'另一个会话')
+})
+
+test('rename failure preserves title and leaving during prompt prevents a later write',async()=>{
+    const view=setup({ElMessageBox:{prompt:async()=>({value:'新标题'})},renameSession:async()=>{throw Error('failed')}})
+    await view.selectSessionClick({id:1,sessionTitle:'旧标题'})
+    await view.handleRenameSession({id:1,sessionTitle:'旧标题'})
+    assert.equal(view.currentSession.value.sessionTitle,'旧标题')
+    assert.equal(view.renamingSessionId.value,null)
+    const prompt=deferred()
+    const another=setup({ElMessageBox:{prompt:()=>prompt.promise},renameSession:async()=>assert.fail('unmounted write')})
+    const pending=another.handleRenameSession({id:1,sessionTitle:'旧标题'})
+    another.unmount()
+    prompt.resolve({value:'新标题'})
+    await pending
 })

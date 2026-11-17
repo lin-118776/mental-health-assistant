@@ -19,6 +19,8 @@ export const deleteSession = (sessionId) =>{
     return request.delete(`/psychological-chat/sessions/${sessionId}`)
 }
 
+export const renameSession = (sessionId, title) => request.put(`/psychological-chat/sessions/${sessionId}/title`, { title })
+
 export const getSessionDetail = (sessionId)=>{
     return request.get(`/psychological-chat/sessions/${sessionId}/messages`)
 }

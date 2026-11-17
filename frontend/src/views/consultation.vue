@@ -97,7 +97,8 @@
                                 </div>
                             </div>
                             <div class="session-actions">
-                                <el-button text type="danger" size="small" title="删除会话" :loading="deletingSessionId === session.id" :disabled="deletingSessionId !== null || (isAiTyping && currentSession?.sessionId === session.id)" @click.stop="handleDeleteSession(session.id)">
+                                <el-button text type="primary" size="small" :disabled="renamingSessionId !== null || deletingSessionId !== null" @click.stop="handleRenameSession(session)">重命名</el-button>
+                                <el-button text type="danger" size="small" title="删除会话" :loading="deletingSessionId === session.id" :disabled="renamingSessionId !== null || deletingSessionId !== null || (isAiTyping && currentSession?.sessionId === session.id)" @click.stop="handleDeleteSession(session.id)">
                                     <el-icon>
                                         <DeleteFilled />
                                     </el-icon>
@@ -205,7 +206,7 @@
 <script setup>
  
 
-import { startSession ,getSessionsList,deleteSession,getSessionDetail,getSessionEmotion} from '@/api/frontend'
+import { startSession ,getSessionsList,deleteSession,getSessionDetail,getSessionEmotion,renameSession} from '@/api/frontend'
 import { Promotion } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ref ,onMounted,onBeforeUnmount} from 'vue'
@@ -251,6 +252,7 @@ const sessionPageSize = 10
 const sessionListLoading = ref(false)
 const sessionListError = ref(false)
 const deletingSessionId = ref(null)
+const renamingSessionId = ref(null)
 
 //定义对话消息
 const messages = ref([])
@@ -454,8 +456,35 @@ const selectSessionClick = async session => {
     }
 }
 
+const handleRenameSession = async session => {
+    if (disposed || renamingSessionId.value !== null || deletingSessionId.value !== null) return
+    renamingSessionId.value = session.id
+    try {
+        const {value} = await ElMessageBox.prompt('请输入会话标题（1–200个字符）', '重命名会话', {
+            inputValue:session.sessionTitle || '', confirmButtonText:'保存', cancelButtonText:'取消',
+            inputValidator:value => typeof value === 'string' && value.trim().length > 0 && value.length <= 200 || '标题须为1到200个字符'
+        })
+        if (disposed) return
+        const title = typeof value === 'string' ? value.trim() : ''
+        if (!title || value.length > 200) return ElMessage.error('标题须为1到200个字符')
+        if (title === session.sessionTitle) return
+        await renameSession(session.id,title)
+        if (disposed) return
+        // 只更新对应会话，不影响确认期间切换到的其他会话。
+        const row = sessionsList.value.find(item => item.id === session.id)
+        if (row) row.sessionTitle = title
+        if (currentSession.value?.sessionId === session.id) currentSession.value.sessionTitle = title
+        ElMessage.success('会话已重命名')
+        await getSessionsPage()
+    } catch {
+        // 取消或请求失败时保留原标题。
+    } finally {
+        if (!disposed) renamingSessionId.value = null
+    }
+}
+
 const handleDeleteSession = async id => {
-    if (disposed || deletingSessionId.value !== null) return
+    if (disposed || deletingSessionId.value !== null || renamingSessionId.value !== null) return
     if (isAiTyping.value && currentSession.value?.sessionId === id) {
         ElMessage.warning('请等待当前回复结束后再删除会话')
         return
