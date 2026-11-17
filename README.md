@@ -181,7 +181,7 @@ server {
 前端权限测试在 `frontend` 目录执行：
 
 ```powershell
-node --test tests/authGuard.test.js tests/authRequest.test.js tests/knowledgePublication.test.js tests/fileUrl.test.js tests/registration.test.js tests/coverUpload.test.js tests/consultationState.test.js tests/knowledgeSearch.test.js tests/adminDiaryDetail.test.js
+node --test tests/authGuard.test.js tests/authRequest.test.js tests/knowledgePublication.test.js tests/fileUrl.test.js tests/registration.test.js tests/coverUpload.test.js tests/consultationState.test.js tests/knowledgeSearch.test.js tests/adminDiaryDetail.test.js tests/personalDiaryState.test.js
 npm run build
 ```
 

@@ -30,6 +30,7 @@
                 </el-table>
                 <el-pagination v-model:current-page="page" :page-size="10" :total="total" layout="prev, pager, next, total" :disabled="listLoading" @current-change="loadDiaries" />
             </div>
+            <el-form :disabled="saving || operationLoading" @submit.prevent="submit">
             <div ref="editorElement" class="diary-card">
                 <div class="title">{{ editingId === null ? '写日志' : '编辑日志' }}</div>
                 <el-alert v-if="editingId !== null" title="正在编辑历史日志，保存后会更新原记录" type="info" :closable="false" />
@@ -100,11 +101,12 @@
                         </div>
                      </div>
                      <div class="action-buttons">
-                        <el-button :disabled="saving" @click="resetForm">{{ editingId === null ? '重置' : '取消编辑' }}</el-button>
+                        <el-button :disabled="saving || operationLoading" @click="resetEditor">{{ editingId === null ? '重置' : '取消编辑' }}</el-button>
                         <el-button type="primary" :loading="saving" @click="submit">{{ editingId === null ? '提交' : '保存修改' }}</el-button>
                      </div>
                 </div>
             </div>
+            </el-form>
         </div>
         <el-dialog v-model="detailVisible" title="日志详情" width="min(680px, 92vw)">
             <el-descriptions v-if="detail" :column="2" border>
@@ -122,7 +124,7 @@
  
 <script setup>
     import { dayjs, ElMessage, ElMessageBox } from 'element-plus'
-    import { ref , reactive, onMounted } from 'vue'
+    import { ref , reactive, onMounted, onBeforeUnmount } from 'vue'
     import { addEmotionDiary, getMyEmotionDiaries, getMyEmotionDiary, updateMyEmotionDiary, deleteMyEmotionDiary } from '@/api/frontend'
     import PersonalEmotionTrend from '@/components/PersonalEmotionTrend.vue'
 
@@ -142,41 +144,45 @@
     const sleepLabels = ['', '很差', '较差', '一般', '良好', '优秀']
     const stressLabels = ['', '很低', '较低', '中等', '较高', '很高']
     let listRequestId = 0
+    let disposed = false
 
     const loadDiaries = async () => {
+        if (disposed) return
         const requestId = ++listRequestId
         listLoading.value = true
         listError.value = false
         try {
             const res = await getMyEmotionDiaries({ page: page.value, size: 10 })
-            if (requestId !== listRequestId) return
+            if (disposed || requestId !== listRequestId) return
             total.value = res.data.total
             const lastPage = Math.max(1, Math.ceil(total.value / 10))
             if (page.value > lastPage) {
                 page.value = lastPage
-                return loadDiaries()
+                return await loadDiaries()
             }
             diaries.value = res.data.records
         } catch {
-            if (requestId === listRequestId) {
+            if (!disposed && requestId === listRequestId) {
                 diaries.value = []
                 listError.value = true
             }
         } finally {
-            if (requestId === listRequestId) listLoading.value = false
+            if (!disposed && requestId === listRequestId) listLoading.value = false
         }
     }
 
     const newDiary = () => {
+        if (disposed || saving.value || operationLoading.value) return
         resetForm()
         editorElement.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
 
     const openDiary = async (id, edit) => {
-        if (saving.value || operationLoading.value) return
+        if (disposed || saving.value || operationLoading.value) return
         operationLoading.value = true
         try {
             const res = await getMyEmotionDiary(id)
+            if (disposed) return
             if (edit) {
                 const record = res.data
                 Object.assign(diaryForm, {
@@ -197,25 +203,27 @@
         } catch {
             // 请求工具已提示错误，保留当前表单。
         } finally {
-            operationLoading.value = false
+            if (!disposed) operationLoading.value = false
         }
     }
 
     const removeDiary = async (record) => {
-        if (saving.value || operationLoading.value) return
+        if (disposed || saving.value || operationLoading.value) return
         operationLoading.value = true
         try {
             await ElMessageBox.confirm(`确定删除 ${record.diaryDate} 的日志吗？删除后无法恢复。`, '删除日志', { type: 'warning' })
+            if (disposed) return
             await deleteMyEmotionDiary(record.id)
+            if (disposed) return
             if (editingId.value === record.id) resetForm()
             if (detail.value?.id === record.id) detailVisible.value = false
             ElMessage.success('删除成功')
             await loadDiaries()
-            trendRef.value?.refresh()
+            if (!disposed) trendRef.value?.refresh()
         } catch {
             // 取消删除或接口失败时保留原记录。
         } finally {
-            operationLoading.value = false
+            if (!disposed) operationLoading.value = false
         }
     }
  
@@ -236,6 +244,7 @@
  
     //选择情绪
     const selectEmotion = (emotion) => {
+        if (disposed || saving.value || operationLoading.value) return
         diaryForm.dominantEmotion = emotion
     }
  
@@ -263,9 +272,14 @@
         })
     }
     
+    const resetEditor = () => {
+        if (disposed || saving.value || operationLoading.value) return
+        resetForm()
+    }
+
     //提交表单
     const submit = async () => {
-        if (saving.value || operationLoading.value) return
+        if (disposed || saving.value || operationLoading.value) return
         if(!diaryForm.moodScore) {
             ElMessage.error('请选择情绪评分')
             return
@@ -284,19 +298,21 @@
         try {
             if (id === null) await addEmotionDiary(data)
             else await updateMyEmotionDiary(id, data)
+            if (disposed) return
             ElMessage.success(id === null ? '提交成功' : '修改成功')
             resetForm()
             page.value = 1
             await loadDiaries()
-            trendRef.value?.refresh()
+            if (!disposed) trendRef.value?.refresh()
         } catch {
             // 失败时保留填写内容，便于重试。
         } finally {
-            saving.value = false
+            if (!disposed) saving.value = false
         }
     }
 
     onMounted(loadDiaries)
+    onBeforeUnmount(() => { disposed = true; listRequestId++; detailVisible.value = false; detail.value = null })
     
     const iconUrl = new URL('@/assets/images/like.png', import.meta.url).href
 </script>
