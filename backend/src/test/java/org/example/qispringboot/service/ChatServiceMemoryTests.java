@@ -76,6 +76,20 @@ class ChatServiceMemoryTests {
     }
 
     @Test
+    void ragRetrievalEntersModelContextAndCitationsArePersistedWithAnswer() {
+        var rag=mock(org.example.qispringboot.rag.RagService.class);
+        var source=new org.example.qispringboot.rag.RagService.Source("doc","睡眠资料",null,0,"睡眠资料正文",1);
+        when(rag.search("睡眠问题")).thenReturn(List.of(source));
+        when(rag.context(List.of(source))).thenReturn("[资料1] 睡眠资料正文");
+        when(rag.citations(List.of(source))).thenReturn("\n参考资料：睡眠资料");
+        ReflectionTestUtils.setField(service,"ragService",rag);
+        var command=new ChatMessageCommandDTO();command.setSessionId(10L);command.setContent("睡眠问题");
+        assertTrue(service.chat(command).getReply().contains("参考资料"));
+        assertTrue(capturedPrompt().getInstructions().stream().anyMatch(message->message.getText().contains("睡眠资料正文")));
+        verify(messages).insert(argThat((ChatMessage message)->message.getSenderType()==2 && message.getContent().contains("参考资料")));
+    }
+
+    @Test
     void streamIncludesOrderedHistoryWithRolesAndCurrentQuestionOnce() {
         when(messages.selectList(any(Wrapper.class))).thenReturn(List.of(
                 message(2, "可以先做一次呼吸练习"), message(1, "我明天考试，很紧张")));

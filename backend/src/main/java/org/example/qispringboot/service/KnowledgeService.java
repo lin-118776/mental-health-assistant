@@ -37,7 +37,15 @@ public class KnowledgeService {
     @Resource
     private UserMapper userMapper;
 
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private CategoryCache categoryCache;
+
     public List<KnowledgeCategory> listCategories() {
+        if(categoryCache!=null) return categoryCache.get(this::loadCategories);
+        return loadCategories();
+    }
+
+    private List<KnowledgeCategory> loadCategories() {
         return categoryMapper.selectList(new LambdaQueryWrapper<KnowledgeCategory>()
                 .eq(KnowledgeCategory::getStatus, 1)
                 .orderByAsc(KnowledgeCategory::getSortOrder)

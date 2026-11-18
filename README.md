@@ -41,7 +41,7 @@ USE mental_health_assistant;
 SHOW TABLES;
 ```
 
-`schema.sql` 建立 `mental_health_assistant` 数据库及以下七张表：
+`schema.sql` 建立 `mental_health_assistant` 数据库及以下十张表（排除用户表后有九张业务表）：
 
 | 表 | 用途 |
 | --- | --- |
@@ -52,6 +52,11 @@ SHOW TABLES;
 | sys_file_info | 上传文件信息 |
 | chat_session | 咨询会话及最后一次情绪分析 |
 | chat_message | 用户和 AI 消息 |
+| rag_document | AI参考资料及入库状态 |
+| rag_chunk | 参考资料分块及检索内容 |
+| ingestion_task | RabbitMQ异步入库任务及重试状态 |
+
+新增功能的启动、接口、数据关系与验收步骤见 [技术要求实现与验收](docs/requirements-completion.md)。已有数据库先备份并执行新增建表脚本；完整中间件验收需按文档开启相应配置。
 
 `seed-categories.sql` 只补充缺失的基础分类，不覆盖已有分类内容，不创建用户或默认密码。文章内容由管理员自行添加。
 
@@ -176,12 +181,12 @@ server {
 .\mvnw.cmd '-Dtest=*Tests,!QiSpringbootApplicationTests' test
 ```
 
-其中数据库初始化测试在 H2 的 MySQL 模式执行建表和分类数据，并检查七个实体的字段映射；测试会移除数据库切换与 MySQL 表选项，因此不能替代真实 MySQL 验证。`QiSpringbootApplicationTests` 是完整应用上下文测试，需要另行准备实际运行配置。
+其中数据库初始化测试在 H2 的 MySQL 模式执行十张表的建表和分类数据，并检查七个原有实体的字段映射；测试会移除数据库切换与 MySQL 表选项，因此不能替代真实 MySQL 验证。新增 `RequirementsApplicationTests` 使用隔离H2和测试密钥启动应用，验证Swagger、JWT、RAG及MCP；原有 `QiSpringbootApplicationTests` 仍需另行准备实际运行配置。
 
 前端权限测试在 `frontend` 目录执行：
 
 ```powershell
-node --test tests/authGuard.test.js tests/authRequest.test.js tests/knowledgePublication.test.js tests/fileUrl.test.js tests/registration.test.js tests/coverUpload.test.js tests/consultationState.test.js tests/knowledgeSearch.test.js tests/adminDiaryDetail.test.js tests/personalDiaryState.test.js
+node --test tests/authGuard.test.js tests/authRequest.test.js tests/knowledgePublication.test.js tests/fileUrl.test.js tests/registration.test.js tests/coverUpload.test.js tests/consultationState.test.js tests/knowledgeSearch.test.js tests/adminDiaryDetail.test.js tests/personalDiaryState.test.js tests/ragDocuments.test.js
 npm run build
 ```
 

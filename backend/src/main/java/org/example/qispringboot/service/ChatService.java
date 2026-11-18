@@ -73,6 +73,9 @@ public class ChatService {
     @Resource
     private EmotionAnalysisService emotionAnalysisService;
 
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private org.example.qispringboot.rag.RagService ragService;
+
     // Spring AI聊天客户端（默认使用硅基流动配置）
     private final ChatClient chatClient;
 
@@ -289,11 +292,13 @@ public class ChatService {
         Long userId = loginUser.getUserId();
         // 2. 解析会话：未传sessionId时自动新建会话
         ChatSession session = resolveSession(userId, commandDTO.getSessionId(), commandDTO.getContent());
-        Prompt prompt = buildConversationPrompt(session.getId(), commandDTO.getContent());
+        var sources = ragService==null ? java.util.List.<org.example.qispringboot.rag.RagService.Source>of() : ragService.search(commandDTO.getContent());
+        Prompt prompt = buildConversationPrompt(session.getId(), commandDTO.getContent(),sources);
         // 3. 保存用户问题消息（发送者=用户）
         ChatMessage userMessage = saveMessage(session.getId(), SENDER_USER, commandDTO.getContent());
         // 4. 生成AI回复并保存消息（发送者=AI助手）
         String reply = chatClient.prompt(prompt).call().content();
+        if(ragService!=null) reply=reply+ragService.citations(sources);
         ChatMessage aiMessage = saveMessage(session.getId(), SENDER_AI, reply);
         // 5. 组装响应返回
         return ChatReplyResponseDTO.builder()
@@ -319,12 +324,15 @@ public class ChatService {
         // 2. 解析会话：未传sessionId时自动新建会话
         ChatSession session = resolveSession(userId, commandDTO.getSessionId(), commandDTO.getContent());
         // 在本次问题入库前读取历史，避免重复加入本次问题。
-        Prompt prompt = buildConversationPrompt(session.getId(), commandDTO.getContent());
+        var sources = ragService==null ? java.util.List.<org.example.qispringboot.rag.RagService.Source>of() : ragService.search(commandDTO.getContent());
+        Prompt prompt = buildConversationPrompt(session.getId(), commandDTO.getContent(),sources);
         // 3. 实时保存用户提问到聊天消息表
         saveMessage(session.getId(), SENDER_USER, commandDTO.getContent());
         // 5. 调用大模型流式接口，逐段处理
         StringBuilder aiContent = new StringBuilder();
+        String citations=ragService==null ? "" : ragService.citations(sources);
         return chatClient.prompt(prompt).stream().content()
+                .concatWith(citations.isEmpty() ? Flux.empty() : Flux.just(citations))
                 // 6. 累积每个分段内容，并包装为带会话ID的JSON分段
                 .doOnNext(aiContent::append)
                 .map(segment -> wrapStreamSegment(session.getId(), segment))
@@ -364,7 +372,7 @@ public class ChatService {
      * 为已校验归属的会话构建上下文。历史保存在数据库中，刷新页面后仍可继续对话。
      * 只取最近的文本消息，并按消息数和字符数限制历史长度；保留完整消息。
      */
-    private Prompt buildConversationPrompt(Long sessionId, String question) {
+    private Prompt buildConversationPrompt(Long sessionId, String question, List<org.example.qispringboot.rag.RagService.Source> sources) {
         List<ChatMessage> recentMessages = chatMessageMapper.selectList(
                 new LambdaQueryWrapper<ChatMessage>()
                         .eq(ChatMessage::getSessionId, sessionId)
@@ -396,6 +404,10 @@ public class ChatService {
         }
         List<Message> messages = new ArrayList<>();
         messages.add(new SystemMessage(PromptManage.PSYCHOLOGICAL_SUPPORT_SYSTEM_PROMPT));
+        if(ragService!=null) {
+            String context=ragService.context(sources);
+            if(!context.isBlank()) messages.add(new UserMessage(context));
+        }
         messages.addAll(history);
         messages.add(new UserMessage(question));
         return new Prompt(messages);

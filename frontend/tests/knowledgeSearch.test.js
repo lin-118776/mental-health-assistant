@@ -23,7 +23,7 @@ const setup = (overrides = {}) => {
         .split('<script setup>')[1].split('</script>')[0]
         .replace(/^\s*import .*$/gm,'').replaceAll('import.meta.url',"'file:///component.vue'")
     vm.createContext(context)
-    vm.runInContext(`${source}\nglobalThis.view = {filters, pagination, articleList, loading, loadError, categories, categoriesLoading, categoriesError, recommendList, recommendLoading, recommendError, getPageList, handleSearch, resetSearch, handleChange, loadCategories, loadRecommendations}`,context)
+    vm.runInContext(`${source}\nglobalThis.view = {filters, pagination, articleList, loading, loadError, categories, categoriesLoading, categoriesError, recommendList, recommendLoading, recommendError, getPageList, handleSearch, resetSearch, handleChange, loadCategories, loadRecommendations,findSources,sourceQuery,sources,sourceError,sourceLoading}`,context)
     return {...context.view,calls,mount:() => mounted(), unmount:() => unmount()}
 }
 
@@ -158,4 +158,24 @@ test('public category and article API wrappers use reader endpoints', () => {
     assert.equal(calls[0][0],'/knowledge/category/tree')
     assert.equal(calls[1][0],'/knowledge/article/page')
     assert.equal(calls[1][1].params.categoryId,2)
+})
+
+test('RAG source search shows actual fragments and ignores late responses',async()=>{
+    const pending=[]
+    const view=setup({searchSources:()=>{const job=deferred();pending.push(job);return job.promise}})
+    view.sourceQuery.value='睡眠'
+    const old=view.findSources()
+    view.sourceQuery.value='压力'
+    const latest=view.findSources()
+    pending[1].resolve({data:[{documentId:'doc2',title:'压力调节',text:'参考正文',chunkIndex:0}]})
+    await latest
+    pending[0].resolve({data:[{documentId:'old'}]})
+    await old
+    assert.equal(view.sources.value[0].documentId,'doc2')
+    assert.equal(view.sourceLoading.value,false)
+    const failed=view.findSources()
+    pending[2].reject(Error('failed'))
+    await failed
+    assert.equal(view.sources.value.length,0)
+    assert.equal(view.sourceError.value,true)
 })

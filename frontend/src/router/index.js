@@ -16,6 +16,11 @@ const BackendRouter=[
         meta:{ requiresAuth:true, requiresAdmin:true },
         children:[
             {
+                path:'rag-documents',
+                component:()=>import('@/views/ragDocuments.vue'),
+                meta:{ title:'AI知识资料', icon:'Document' }
+            },
+            {
                 path:'users',
                 component:()=>import('@/views/users.vue'),
                 meta:{ title:'用户管理', icon:'UserFilled' }

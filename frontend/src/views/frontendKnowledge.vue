@@ -27,6 +27,20 @@
                 <el-button @click="resetSearch">重置</el-button>
             </el-form-item>
         </el-form>
+        <el-card class="source-search">
+            <h3>AI参考资料检索</h3>
+            <p>检索已入库的知识片段，AI 对话会使用相关资料并在回复末尾标注来源。资料仅供参考。</p>
+            <el-input v-model="sourceQuery" maxlength="4000" placeholder="例如：如何改善睡眠" @keydown.enter.prevent="findSources" />
+            <el-button :loading="sourceLoading" @click="findSources">检索资料</el-button>
+            <p v-if="sourceError">资料检索失败，请重试。</p>
+            <p v-else-if="sourceSearched && !sourceLoading && !sources.length">未找到相关资料，可换个关键词。</p>
+            <article v-for="source in sources" :key="source.documentId + ':' + source.chunkIndex">
+                <strong>{{ source.title }}</strong>
+                <p>文档 {{ source.documentId }} · 片段 {{ source.chunkIndex }}</p>
+                <p>{{ source.text }}</p>
+                <p v-if="source.url">原始来源：{{ source.url }}</p>
+            </article>
+        </el-card>
         <div class="content">
             <!-- 左侧菜单 -->
             <div class="recommend-section">
@@ -99,6 +113,7 @@
     import { getKnowledgeList, getKnowledgeCategories } from '@/api/frontend'
     import { useRouter } from 'vue-router'
     import { resolveFileUrl } from '@/config/index'
+    import { searchSources } from '@/api/rag'
  
     const iconUrl = new URL('@/assets/images/book.png', import.meta.url).href
     const router = useRouter()
@@ -127,6 +142,16 @@
     let categoryRequestId = 0
     let recommendRequestId = 0
     let disposed = false
+    const sourceQuery=ref(''),sources=ref([]),sourceLoading=ref(false),sourceError=ref(false),sourceSearched=ref(false)
+    let sourceRequestId=0
+    const findSources=async()=>{
+        const query=sourceQuery.value.trim()
+        if(!query)return
+        const id=++sourceRequestId;sourceLoading.value=true;sourceError.value=false;sources.value=[];sourceSearched.value=true
+        try{const res=await searchSources(query);if(!disposed && id===sourceRequestId)sources.value=res.data}
+        catch{if(!disposed && id===sourceRequestId)sourceError.value=true}
+        finally{if(!disposed && id===sourceRequestId)sourceLoading.value=false}
+    }
     //获取列表数据
     const getPageList = async () =>{
         const requestId = ++pageRequestId
@@ -223,6 +248,7 @@
  
 <style scoped lang="scss">
 .knowledge-container {
+    .source-search {max-width:1160px;margin:20px auto;}
     .knowledge-filters {
         max-width: 1200px;
         margin: 20px auto 0;

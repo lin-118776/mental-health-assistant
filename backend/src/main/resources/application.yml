@@ -1,4 +1,30 @@
 spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 500ms
+      connect-timeout: 500ms
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:mental}
+    password: ${RABBITMQ_PASSWORD:local-development-only}
+    connection-timeout: 2s
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        auto-startup: ${RAG_INGESTION_ENABLED:false}
+        missing-queues-fatal: false
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 3
+          initial-interval: 1s
   servlet:
     multipart:
       max-file-size: 5MB
@@ -21,6 +47,17 @@ spring:
 
 server:
   port: 8080
+
+app:
+  cache:
+    enabled: ${REDIS_CACHE_ENABLED:false}
+  ingestion:
+    enabled: ${RAG_INGESTION_ENABLED:false}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+  paths-to-match: /api/**
 
 # JWT配置
 jwt:

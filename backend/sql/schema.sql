@@ -3,6 +3,39 @@ CREATE DATABASE IF NOT EXISTS mental_health_assistant CHARACTER SET utf8mb4 COLL
 USE mental_health_assistant;
 SET NAMES utf8mb4;
 
+CREATE TABLE IF NOT EXISTS rag_document (
+    id VARCHAR(32) PRIMARY KEY,
+    title VARCHAR(200) NOT NULL,
+    source_url VARCHAR(500) DEFAULT NULL,
+    content LONGTEXT NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'QUEUED',
+    error_message VARCHAR(500) DEFAULT NULL,
+    created_by BIGINT NOT NULL,
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS rag_chunk (
+    id VARCHAR(32) PRIMARY KEY,
+    document_id VARCHAR(32) NOT NULL,
+    chunk_index INT NOT NULL,
+    content TEXT NOT NULL,
+    UNIQUE KEY uk_chunk_position (document_id, chunk_index),
+    CONSTRAINT fk_chunk_document FOREIGN KEY (document_id) REFERENCES rag_document(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS ingestion_task (
+    id VARCHAR(32) PRIMARY KEY,
+    document_id VARCHAR(32) NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+    attempts INT NOT NULL DEFAULT 0,
+    error_message VARCHAR(500) DEFAULT NULL,
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+    KEY idx_task_status (status, updated_at),
+    CONSTRAINT fk_task_document FOREIGN KEY (document_id) REFERENCES rag_document(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE IF NOT EXISTS `user` (
     `id` BIGINT NOT NULL AUTO_INCREMENT,
     `username` VARCHAR(50) NOT NULL,
